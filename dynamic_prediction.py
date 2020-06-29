@@ -34,6 +34,30 @@ class Signal:
         filtered = scipy.signal.convolve(y, win, mode='same') / sum(win)
         return filtered
 
+    def PRBS(self):
+        # random signal generation
+        b = np.random.randint(10, 50, nstep) # range for frequency
+        b[0:int(.1*self.nstep)] = 0
+        
+        for i in range(10,np.size(b)):
+            b[i] = b[i-1]+b[i] 
+        
+        # PRBS
+        a = np.zeros(nstep)
+        j = 0
+        while j < nstep:
+            a[j] = 1
+            a[j+1] = 0
+            j = j+2
+        i=0
+        prbs = np.zeros(nstep)
+        while b[i]<np.size(prbs):
+            k = b[i]
+            prbs[k:] = a[i]
+            i=i+1
+        
+        return prbs
+
 # Generate gaussian noise
 def gaussNoise(array):
     noise = np.random.normal(0,0.05,len(array))
@@ -78,18 +102,18 @@ def preprocess(y3):
     return ceiling
 
 numTrials = 1000
+nstep = 100
+timelength = 100
 
 # Simulate taup * dy/dt = -y + K*u
-u3Array = np.full((numTrials,100),0.)
-y3Array = np.full((numTrials,100),0.)
-y3_1Array = np.full((numTrials,100),0.)
+u3Array = np.full((numTrials,nstep),0.)
+y3Array = np.full((numTrials,nstep),0.)
+y3_1Array = np.full((numTrials,nstep),0.)
 
 KpSpace = np.linspace(1,10,100)
 taupSpace = np.linspace(1,10,100)
 zetaSpace = np.linspace(0.1,1,100)
 
-nstep = 100
-timelength = 100
 timestep = nstep/timelength
 FOP = []
 Kout = []
@@ -117,7 +141,7 @@ while(iterator<numTrials):
     FOP.append((Kp,taup))
     iterator+=1
     
-
+    
     plt.figure(dpi=100)
     #plt.plot(t3,u3,label='Input Signal')
     #plt.plot(t3,du3,label='Derivative of Input Signal')

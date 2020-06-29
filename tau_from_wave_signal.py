@@ -34,10 +34,34 @@ class Signal:
         win = scipy.signal.hann(windowlength)-0.5
         filtered = scipy.signal.convolve(y, win, mode='same') / sum(win)
         return filtered
+    
+    def PRBS(self):
+        # random signal generation
+        b = np.random.randint(10, 50, nstep) # range for frequency
+        b[0:int(.1*self.nstep)] = 0
+        
+        for i in range(10,np.size(b)):
+            b[i] = b[i-1]+b[i] 
+        
+        # PRBS
+        a = np.zeros(nstep)
+        j = 0
+        while j < nstep:
+            a[j] = 1
+            a[j+1] = 0
+            j = j+2
+        i=0
+        prbs = np.zeros(nstep)
+        while b[i]<np.size(prbs):
+            k = b[i]
+            prbs[k:] = a[i]
+            i=i+1
+        
+        return prbs
 
 # Generate gaussian noise
 def gaussNoise(array):
-    noise = np.random.normal(0,0.05,len(array))
+    noise = np.random.normal(0,0.01,len(array))
     return array+noise
 
 # Central point derivative of continuous data
@@ -78,20 +102,20 @@ def preprocess(y3):
     ceiling = max(y3)
     return ceiling
 
-numTrials = 1000
+numTrials = 10
+nstep = 1000
+timelength = 1000
+timestep = nstep/timelength
 
 # Simulate taup * dy/dt = -y + K*u
-u3Array = np.full((numTrials,100),0.)
-y3Array = np.full((numTrials,100),0.)
-y3_1Array = np.full((numTrials,100),0.)
+u3Array = np.full((numTrials,nstep),0.)
+y3Array = np.full((numTrials,nstep),0.)
+y3_1Array = np.full((numTrials,nstep),0.)
 
 KpSpace = np.linspace(1,10,100)
 taupSpace = np.linspace(1,10,100)
 zetaSpace = np.linspace(0.1,1,100)
 
-nstep = 100
-timelength = 100
-timestep = nstep/timelength
 taus = []
 Kout = []
 t3 = np.linspace(0,timelength,nstep)
@@ -105,7 +129,7 @@ while(iterator<numTrials):
     Kp = KpSpace[index]
     taup = taupSpace[index1]
     
-    u3 = gaussNoise(Signal.random_signal())
+    u3 = gaussNoise(Signal.PRBS())
     du3 = CPMethod(u3,timestep)
     y3 = gaussNoise(odeint(FOmodel,0,t3,args=(t3,u3,Kp,taup)).ravel())
     
@@ -114,13 +138,13 @@ while(iterator<numTrials):
     taus.append(taup)
     iterator+=1
     
-    '''
+    
     plt.figure(dpi=100)
     plt.plot(t3,u3,label='Input Signal')
-    #plt.plot(t3,du3,label='Derivative of Input Signal')
-    plt.plot(t3,y3-u3, label='First Order Response')
+    #plt.plot(t3,np.fft.fft(y3)/np.fft.fft(u3))
+    plt.plot(t3,y3, label='First Order Response')
     plt.legend()
-    '''
+    
 
 index = range(0,len(y3Array))
 train = random.sample(index,int(0.7*numTrials))
