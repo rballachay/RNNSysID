@@ -6,6 +6,7 @@ Created on Wed Jun 17 14:50:26 2020
 @author: RileyBallachay
 """
 import numpy as np
+import random
 import matplotlib.pyplot as plt
 from scipy.integrate import odeint,ode
 import scipy.signal as signal
@@ -17,7 +18,7 @@ from scipy.fft import fft
 from sklearn.preprocessing import StandardScaler
 from scipy.stats import kurtosis,skew,entropy,variation,gmean
 from sklearn.metrics import r2_score
-from sippy import *
+from mpl_toolkits.mplot3d import Axes3D
 
 class Signal:
  
@@ -35,50 +36,47 @@ class Signal:
         filtered = signal.convolve(y, win, mode='same') / sum(win)
         return filtered
     
-    def PRBS(self):
-        # random signal generation
-        b = np.random.randint(50,100, nstep) # range for frequency
-        b[0:int(.2*self.nstep)] = 0
-        
-        for i in range(int(.2*self.nstep),np.size(b)):
-            b[i] = b[i-1]+b[i] 
-        
-        # PRBS
-        a = np.zeros(nstep)
-        j = 0
-        while j < nstep:
-            a[j] = 1
-            a[j+1] = 0
-            j = j+2
-        i=0
-        prbs = np.zeros(nstep)
-        while b[i]<np.size(prbs):
-            k = b[i]
-            prbs[k:] = a[i]
-            i=i+1
-        
-        i=0
-        while i<len(prbs)-5:
-            if prbs[i+5]==1 and prbs[i]==0:
-                prbs[i+1]=0.2
-                prbs[i+2]=0.4
-                prbs[i+3]=0.6
-                prbs[i+4]=0.8
-                i+=5
-            elif prbs[i+2]==0 and prbs[i]==1:
-                prbs[i+4]=0.2
-                prbs[i+3]=0.4
-                prbs[i+2]=0.6
-                prbs[i+1]=0.8
-                i+=5
+    def PRBS(self, prob_switch=0.1, Range=[-1.0, 1.0]):
+               
+        min_Range = min(Range)
+        max_Range = max(Range)
+        gbn = np.ones(self.nstep)
+        for i in range(self.nstep - 1):
+            prob = np.random.random()
+            gbn[i + 1] = gbn[i]
+            if prob < prob_switch:
+                gbn[i + 1] = -gbn[i + 1]
+        for i in range(self.nstep):
+            if gbn[i] > 0.:
+                gbn[i] = max_Range
             else:
-                i+=1
-      
-        return prbs
+                gbn[i] = min_Range
+        
+        return gbn
+ 
+def plotParameterSpace(x,y,z,trainID,valID):
+    x=np.array(x); y=np.array(y); z=np.array(z)
+    
+    figgy = plt.figure(dpi=200)
+    ax = Axes3D(figgy)
+    
+    xT = x[trainID]; xV = x[valID] 
+    yT = y[trainID]; yV = y[valID]
+    zT = z[trainID]; zV = z[valID]
+    
+    ax.scatter(xT,yT,zT,c='g',label="Training Data")
+    ax.scatter(xV,yV,zV,c='purple',label="Validation Data")
+    ax.set_xlabel("τ (Time Constant)")
+    ax.set_ylabel("Kp (Gain)")
+    ax.set_zlabel("θ (Delay)")
+    ax.legend()
+    for angle in range(0, 180,60):
+        ax.view_init(30, angle)
+        plt.draw()
     
 # Generate gaussian noise
 def gaussNoise(array):
-    noise = np.random.normal(0,0.05,len(array))
+    noise = np.random.normal(0,0.01,len(array))
     return array+noise
 
 # Central point derivative of continuous data
@@ -121,7 +119,7 @@ def preprocess(y3):
     return ceiling
 
 # Definition of constants for simulation
-numTrials = 100
+numTrials = 1000
 nstep = 100
 timelength = 100
 timestep = nstep/timelength
@@ -139,7 +137,7 @@ conArray = np.full((numTrials,nstep),0.)
 KpSpace = np.linspace(1,10,nstep)
 taupSpace = np.linspace(1,10,nstep)
 zetaSpace = np.linspace(0.1,1,nstep)
-thetaSpace = np.linspace(0,0,nstep)
+thetaSpace = np.linspace(1,10,nstep)
 
 taus = []
 thetas=[]
@@ -158,8 +156,8 @@ while(iterator<numTrials):
     taup = taupSpace[index1]
     theta = thetaSpace[index2]
     
-    u = (Signal.random_signal())   
-    y = (odeint(FOmodel,0,t,args=(t,u,Kp,taup,theta),hmax=5.).ravel())
+    u = (Signal.PRBS())   
+    y = (odeint(FOmodel,0,t,args=(t,u,Kp,taup,theta),hmax=1.).ravel())
     
     # THis was commented out because it messed with my results
     #y = (y-np.mean(y))/np.std(y)
@@ -180,28 +178,30 @@ while(iterator<numTrials):
     corrArray[iterator,:] = correlation
     conArray[iterator,:] = convolution
     
+    
     # Only plot every 100 input signals
-    if (iterator)<3:
+    if (iterator)<10:
         plt.figure(dpi=100)
-        plt.plot(t,u,label='Input Signal')
-        plt.plot(t,y, label='FOPTD Response')
-        plt.plot(t,correlation,label='Correlated')
-        plt.plot(t,convolution,label='Convolution')
+        plt.plot(t[:200],u[:200],label='Input Signal')
+        plt.plot(t[:200],y[:200], label='FOPTD Response')
+        #plt.plot(t,correlation,label='Correlated')
+        #plt.plot(t,convolution,label='Convolution')
         plt.xlabel((taup))
         plt.legend()
         
     # Subsequently update the iterator to move down row
     iterator+=1
-    
+
     
 index = range(0,len(yArray))
 train = random.sample(index,int(trainFrac*numTrials))
 test = [item for item in list(index) if item not in train]
 
-#xData = yArray
-xData = np.stack((corrArray,conArray,yArray),axis=1)
+plotParameterSpace(taus,kps,thetas,train,test)
+
+xData = yArray
 yData = taus
-numDim = xData.ndim 
+numDim = xData.ndim - 1
 
 trainspace = xData[train,:]
 valspace = xData[test,:] 
@@ -214,8 +214,9 @@ y_val = np.array([yData[i] for i in test])
 
 model = keras.Sequential()
 
-model.add(layers.LSTM(25, return_sequences=True,activation='tanh',input_shape=(nstep,numDim)))
-model.add(layers.LSTM(5,activation='tanh'))
+# I tried almost every permuation of LSTM architecture and couldn't get it to work
+model.add(layers.GRU(100, activation='tanh',input_shape=(nstep,numDim)))
+model.add(layers.Dense(100,activation='linear'))
 model.add(layers.Dense(1, activation='linear'))
 
 # Compile the model
@@ -227,8 +228,8 @@ print("Fit model on training data")
 history = model.fit(
     x_train,
     y_train,
-    batch_size=32,
-    epochs=250,
+    batch_size=16,
+    epochs=200,
     # We pass some validation for
     # monitoring validation loss and metrics
     # at the end of each epoch
@@ -243,12 +244,3 @@ plt.plot(np.linspace(1,10),np.linspace(1,10),'r--')
 plt.xlabel('Predicted Value of Theta')
 print(r2_score(y_val,predictions))
 
-# Note that convolving and correlating the random signal works, but the same 
-# doesn't work for the PRBS - not sure why this is 
-
-
-# This is the historical model that worked with the randomly oscillating data
-#model.add(layers.LSTM(100, return_sequences=True,activation='tanh',input_shape=(nstep,numDim)))
-#model.add(layers.LSTM(50,activation='tanh'))
-#model.add(layers.Dense(10,activation='linear'))
-#model.add(layers.Dense(1, activation='linear'))

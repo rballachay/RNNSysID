@@ -18,6 +18,7 @@ from scipy.fft import fft
 from sklearn.preprocessing import StandardScaler
 from scipy.stats import kurtosis,skew,entropy,variation,gmean
 from sklearn.metrics import r2_score
+from mpl_toolkits.mplot3d import Axes3D
 
 class Signal:
  
@@ -52,6 +53,26 @@ class Signal:
                 gbn[i] = min_Range
         
         return gbn
+ 
+def plotParameterSpace(x,y,z,trainID,valID):
+    x=np.array(x); y=np.array(y); z=np.array(z)
+    
+    figgy = plt.figure(dpi=200)
+    ax = Axes3D(figgy)
+    
+    xT = x[trainID]; xV = x[valID] 
+    yT = y[trainID]; yV = y[valID]
+    zT = z[trainID]; zV = z[valID]
+    
+    ax.scatter(xT,yT,zT,c='g',label="Training Data")
+    ax.scatter(xV,yV,zV,c='purple',label="Validation Data")
+    ax.set_xlabel("τ (Time Constant)")
+    ax.set_ylabel("Kp (Gain)")
+    ax.set_zlabel("θ (Delay)")
+    ax.legend()
+    for angle in range(0, 180,60):
+        ax.view_init(30, angle)
+        plt.draw()
     
 # Generate gaussian noise
 def gaussNoise(array):
@@ -98,9 +119,9 @@ def preprocess(y3):
     return ceiling
 
 # Definition of constants for simulation
-numTrials = 100
-nstep = 2000
-timelength = 2000
+numTrials = 1000
+nstep = 100
+timelength = 100
 timestep = nstep/timelength
 trainFrac = 0.7
 valFrac  = 1-trainFrac
@@ -113,10 +134,10 @@ y_1Array = np.full((numTrials,nstep),0.)
 corrArray = np.full((numTrials,nstep),0.)
 conArray = np.full((numTrials,nstep),0.)
 
-KpSpace = np.linspace(1,1,nstep)
+KpSpace = np.linspace(1,10,nstep)
 taupSpace = np.linspace(1,10,nstep)
 zetaSpace = np.linspace(0.1,1,nstep)
-thetaSpace = np.linspace(0,0,nstep)
+thetaSpace = np.linspace(1,10,nstep)
 
 taus = []
 thetas=[]
@@ -136,7 +157,7 @@ while(iterator<numTrials):
     theta = thetaSpace[index2]
     
     u = (Signal.PRBS())   
-    y = gaussNoise(odeint(FOmodel,0,t,args=(t,u,Kp,taup,theta),hmax=1.).ravel())
+    y = (odeint(FOmodel,0,t,args=(t,u,Kp,taup,theta),hmax=1.).ravel())
     
     # THis was commented out because it messed with my results
     #y = (y-np.mean(y))/np.std(y)
@@ -157,6 +178,7 @@ while(iterator<numTrials):
     corrArray[iterator,:] = correlation
     conArray[iterator,:] = convolution
     
+    
     # Only plot every 100 input signals
     if (iterator)<10:
         plt.figure(dpi=100)
@@ -169,11 +191,13 @@ while(iterator<numTrials):
         
     # Subsequently update the iterator to move down row
     iterator+=1
-    
+
     
 index = range(0,len(yArray))
 train = random.sample(index,int(trainFrac*numTrials))
 test = [item for item in list(index) if item not in train]
+
+plotParameterSpace(taus,kps,thetas,train,test)
 
 xData = yArray
 yData = taus
@@ -190,8 +214,9 @@ y_val = np.array([yData[i] for i in test])
 
 model = keras.Sequential()
 
-model.add(layers.LSTM(500, activation='tanh',input_shape=(nstep,numDim)))
-model.add(layers.Dense(10,activation='linear'))
+# I tried almost every permuation of LSTM architecture and couldn't get it to work
+model.add(layers.GRU(100, activation='tanh',input_shape=(nstep,numDim)))
+model.add(layers.Dense(100,activation='linear'))
 model.add(layers.Dense(1, activation='linear'))
 
 # Compile the model
@@ -203,8 +228,8 @@ print("Fit model on training data")
 history = model.fit(
     x_train,
     y_train,
-    batch_size=8,
-    epochs=20,
+    batch_size=16,
+    epochs=200,
     # We pass some validation for
     # monitoring validation loss and metrics
     # at the end of each epoch
