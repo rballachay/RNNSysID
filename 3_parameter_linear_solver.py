@@ -5,6 +5,7 @@ Created on Wed Jun 17 14:50:26 2020
 
 @author: RileyBallachay
 """
+import os
 import numpy as np
 import random
 import matplotlib.pyplot as plt
@@ -27,7 +28,7 @@ from model_list import model
 numTrials = 1000
 nstep = 100
 timelength = 100
-trainFrac = 0.7
+trainFrac = .7
 
 # Calls the module Signal with the initialization parameters
 # then simulates using the initialized model
@@ -42,6 +43,11 @@ yDatas = [taus, kps, thetas]
 
 m = model(nstep)
 modelList = []
+
+uSum = np.sum(uArray,axis=0)
+plt.figure()
+plt.plot(np.linspace(0,100,100),uSum)
+
 
 for j in range(0,len(xDatas)):
     xData = xDatas[j]
@@ -62,7 +68,8 @@ for j in range(0,len(xDatas)):
         validation_data=(x_val, y_val),
     )
     modelList.append(model)
-    
+    modelpath = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/"+str(j)+".h5"
+    model.save(modelpath)
     plt.figure(dpi=100)
     plt.plot(history.history['loss'])
     plt.plot(history.history['val_loss'])
@@ -83,16 +90,26 @@ for j in range(0,len(xDatas)):
     print(r2_score(y_val,predictions))
     plt.show()
 
+# This segment of code is for loading the models if they are already saved
+"""
+for filename in os.listdir("/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/"):
+    if filename.endswith(".h5"):
+        name = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/" +filename
+        print(name)
+        modelList.append(keras.models.load_model(name))
+"""   
+
 xData = xDatas[0]
 yData = yDatas[0]   
 x_train,x_val,y_train,y_val,numDim = sig.preprocess(xData,yData)
-tauPredictions = modelList[0].predict(x_val)
+tauPredictions = modelList[2].predict(x_val)
 kpPredictions = modelList[1].predict(x_val)
 
 xData = xDatas[2]
 yData = yDatas[2]  
 x_train,x_val,y_train,y_val,numDim = sig.preprocess(xData,yData)
-thetaPredictions = modelList[2].predict(x_val)
+thetaPredictions = modelList[0].predict(x_val)
+
 
 uArrays = uArray[test,:]
 yArrays = yArray[test,:]
@@ -113,4 +130,6 @@ for (i,index) in enumerate(test):
     plt.xlabel("Time (s)")
     plt.ylabel("Change from set point")
     plt.legend()
-    plt.show()
+    savePath = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Predictions/" + str(i) + ".png"
+    
+    #plt.savefig(savePath)

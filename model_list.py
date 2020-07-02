@@ -6,6 +6,7 @@ Created on Tue Jun 30 17:32:17 2020
 @author: RileyBallachay
 """
 import numpy as np
+import random
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers

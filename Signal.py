@@ -153,7 +153,7 @@ class Signal:
             theta = thetaSpace[index2]
             
             u = (self.PRBS())   
-            y = (odeint(self.FOmodel,0,t,args=(t,u,Kp,taup,theta),hmax=1.).ravel())
+            y = self.gaussNoise(odeint(self.FOmodel,0,t,args=(t,u,Kp,taup,theta),hmax=1.).ravel())
             
             # This was commented out because it messed with my results
             #y = (y-np.mean(y))/np.std(y)
