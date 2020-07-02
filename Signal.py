@@ -78,9 +78,9 @@ class Signal:
         ax.legend()
     
     # Generate gaussian noise with mean and standard deviation
-    # hard coded as 0 and 0.01 and applies to array
+    # of 5% of the maximum returned value. 
     def gaussNoise(self,array):
-        noise = np.random.normal(0,0.01,len(array))
+        noise = np.random.normal(0,0.05*max(array),len(array))
         return array+noise
     
     # Central point derivative of continuous data to be used 
@@ -104,6 +104,8 @@ class Signal:
         return idx
     
     # First order plus time delay model to be used for simulation
+    # Note that this model includes time delay implicit within 
+    # t=t-theta. 
     def FOmodel(self,y,t,timearray,inputarray,Kp,taup,theta): 
         t=t-theta
         index = self.find_nearest(timearray,t)
@@ -122,16 +124,19 @@ class Signal:
         return [dydt,dy2dt2]
     
     # Function which simulates a signal and returns it in whichever 
-    def simulate(self):
+    def training_simulation(self):
+        # Access all the attributes from initialization
         numTrials=self.numTrials; nstep=self.nstep;
         timelength=self.timelength; trainFrac=self.trainFrac
-    
+        
+        # Initialize the arrays which will store the simulation data
         uArray = np.full((numTrials,nstep),0.)
         yArray = np.full((numTrials,nstep),0.)
         y_1Array = np.full((numTrials,nstep),0.)
         corrArray = np.full((numTrials,nstep),0.)
         conArray = np.full((numTrials,nstep),0.)
         
+        # Make arrays containing parameters tau, theta
         KpSpace = np.linspace(1,10,nstep)
         taupSpace = np.linspace(1,10,nstep)
         zetaSpace = np.linspace(0.1,1,nstep)
@@ -154,10 +159,6 @@ class Signal:
             
             u = (self.PRBS())   
             y = self.gaussNoise(odeint(self.FOmodel,0,t,args=(t,u,Kp,taup,theta),hmax=1.).ravel())
-            
-            # This was commented out because it messed with my results
-            #y = (y-np.mean(y))/np.std(y)
-            #u = (u-np.mean(u))/np.std(u)
             
             uArray[iterator,:] = u
             yArray[iterator,:]= y
@@ -194,6 +195,8 @@ class Signal:
         train = random.sample(index,int(trainFrac*numTrials))
         test = [item for item in list(index) if item not in train]
         
+        # Make it so that any of these attributes can be accessed 
+        # without needing to return them all from the function
         self.plotParameterSpace(taus,kps,thetas,train,test)
         self.uArray = uArray
         self.yArray = yArray
@@ -207,7 +210,8 @@ class Signal:
         
         return uArray,yArray,corrArray,conArray,taus,kps,thetas,train,test
     
-    
+    # This function uses the training and testing indices produced during
+    # simulate() to segregate the training and validation sets
     def preprocess(self,xData,yData):
         try:
             _,_,numDim= xData.shape
@@ -224,3 +228,26 @@ class Signal:
         y_val = np.array([yData[i] for i in self.test])
         
         return x_train,x_val,y_train,y_val,numDim
+    
+    # This function makes it easier to run a bunch of simulations and 
+    # automatically return the validation and testing sets without 
+    # calling each function separately. 
+    def simulate_and_preprocess(self):
+        # Since no training is occurring, can skip separation of testing and validation sets
+        self.trainFrac = 1
+        
+        uArray,yArray,corrArray,conArray,taus,kps,thetas,train,test = self.training_simulation()
+        xDatas = [yArray,yArray,(yArray-np.mean(yArray))/np.std(yArray) - uArray]
+        yDatas = [taus, kps, thetas]
+        
+        self.xData ={};
+        self.yData={}
+        self.names = ["kp","tau","theta"]
+        
+        for (i,name) in enumerate(self.names):
+            x,_,y,_,_ = self.preprocess(xDatas[i],yDatas[i])
+            self.xData[name] = x
+            self.yData[name] = y
+        
+        return self.xData,self.yData
+        
