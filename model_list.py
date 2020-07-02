@@ -34,18 +34,3 @@ class model:
         return model   
     
    
-
-    
-    def tau_model(self):
-        model = keras.Sequential()
-        
-        # I tried almost every permuation of LSTM architecture and couldn't get it to work
-        model.add(layers.GRU(100, activation='tanh',input_shape=(self.nstep,1)))
-        model.add(layers.Dense(100,activation='linear'))
-        model.add(layers.Dense(1, activation='linear'))
-        
-        # Compile the model
-        model.compile(optimizer='adam', loss='mean_squared_error')
-        
-        #batch size of 16 and at least 200 epochs
-        return model
