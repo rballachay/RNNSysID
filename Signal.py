@@ -49,6 +49,7 @@ class Signal:
         min_Range = min(Range)
         max_Range = max(Range)
         gbn = np.ones(self.nstep)
+        gbn = gbn*random.choice([-1,1])
         for i in range(self.nstep - 1):
             prob = np.random.random()
             gbn[i + 1] = gbn[i]
@@ -80,7 +81,7 @@ class Signal:
     # Generate gaussian noise with mean and standard deviation
     # of 5% of the maximum returned value. 
     def gaussNoise(self,array):
-        noise = np.random.normal(0,0.05*max(array),len(array))
+        noise = np.random.normal(0,0.01,len(array))
         return array+noise
     
     # Central point derivative of continuous data to be used 
@@ -108,8 +109,11 @@ class Signal:
     # t=t-theta. 
     def FOmodel(self,y,t,timearray,inputarray,Kp,taup,theta): 
         t=t-theta
-        index = self.find_nearest(timearray,t)
-        u = inputarray[index]
+        if t<0:
+            u=0
+        else:
+            index = self.find_nearest(timearray,t)
+            u = inputarray[index]
         return (-y + Kp * u)/taup
     
     # Second order plus time delay model to be used for simulation once 
@@ -124,7 +128,7 @@ class Signal:
         return [dydt,dy2dt2]
     
     # Function which simulates a signal and returns it in whichever 
-    def training_simulation(self):
+    def training_simulation(self,KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10],zetaRange=[0.1,1]):
         # Access all the attributes from initialization
         numTrials=self.numTrials; nstep=self.nstep;
         timelength=self.timelength; trainFrac=self.trainFrac
@@ -137,10 +141,14 @@ class Signal:
         conArray = np.full((numTrials,nstep),0.)
         
         # Make arrays containing parameters tau, theta
-        KpSpace = np.linspace(1,10,nstep)
-        taupSpace = np.linspace(1,10,nstep)
-        zetaSpace = np.linspace(0.1,1,nstep)
-        thetaSpace = np.linspace(1,10,nstep)
+        KpSpace = np.linspace(KpRange[0],KpRange[1],nstep)
+        taupSpace = np.linspace(tauRange[0],tauRange[1],nstep)
+        zetaSpace = np.linspace(zetaRange[0],zetaRange[1],nstep)
+        thetaSpace = np.linspace(thetaRange[0],thetaRange[1],nstep)
+        
+        KpSpace[KpSpace==0] = 0.01
+        taupSpace[taupSpace==0] = 0.01
+        thetaSpace[thetaSpace==0] = 0.01
         
         taus = []
         thetas=[]
@@ -190,10 +198,13 @@ class Signal:
             # Subsequently update the iterator to move down row
             iterator+=1
         
-            
         index = range(0,len(yArray))
-        train = random.sample(index,int(trainFrac*numTrials))
-        test = [item for item in list(index) if item not in train]
+        if self.trainFrac!=1:  
+            train = random.sample(index,int(trainFrac*numTrials))
+            test = [item for item in list(index) if item not in train]
+        else:
+            train=index
+            test=[]
         
         # Make it so that any of these attributes can be accessed 
         # without needing to return them all from the function
@@ -204,7 +215,7 @@ class Signal:
         self.convolution = convolution
         self.taus = taus
         self.kps = kps
-        self.thetas = thetaSpace
+        self.thetas = thetas
         self.train = train
         self.test = test
         
@@ -250,4 +261,3 @@ class Signal:
             self.yData[name] = y
         
         return self.xData,self.yData
-        
