@@ -37,4 +37,4 @@ predictor = Model(nstep)
 predictor.load_FOPTD()
 
 # Function to make predictions based off the simulation 
-i = predictor.predict(sig)
+i = predictor.predict(sig,savePredict=True)
