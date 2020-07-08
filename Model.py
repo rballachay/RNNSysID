@@ -9,14 +9,28 @@ import os
 import numpy as np
 import random
 import tensorflow as tf
-from tensorflow import keras
+from tensorflow import keras 
 from tensorflow.keras import layers
+import tensorflow_probability as tfp
+tfd = tfp.distributions
+tfb = tfp.bijectors
 from sklearn.metrics import r2_score
 import matplotlib.pyplot as plt
 from scipy.integrate import odeint
 from Signal import Signal
+from tensorflow.keras import backend as K
 import datetime
 
+class MyThresholdCallback(tf.keras.callbacks.Callback):
+    def __init__(self, threshold):
+        super(MyThresholdCallback, self).__init__()
+        self.threshold = threshold
+
+    def on_epoch_end(self, epoch, logs=None): 
+        val_acc = logs["val_coeff_determination"]
+        if val_acc >= self.threshold:
+            self.model.stop_training = True
+            
 class Model:    
     
     # Initialize the model instace 
@@ -36,7 +50,7 @@ class Model:
             self.modelDict[self.names[i]] = modelList[i]
 
     
-    def train_FOPTD(self,sig=False,plotLoss=True,plotVal=True):
+    def train_FOPTD(self,sig=False,plotLoss=True,plotVal=True,probabilistic=True,epochs=100,saveModel=True):
         yArray = sig.yArray; uArray = sig.uArray
         taus=sig.taus; kps=sig.kps; thetas=sig.thetas
         xDatas = [yArray,yArray,(yArray-np.mean(yArray))/np.std(yArray) - uArray]
@@ -47,10 +61,11 @@ class Model:
             print("Please initialize the class signal with model parameters first")
             return 
         
-        parentDir = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/"
-        time = str(datetime.datetime.now())[:16]
-        plotDir = parentDir + time + '/'
-        os.mkdir(plotDir)
+        if saveModel:
+            parentDir = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/"
+            time = str(datetime.datetime.now())[:16]
+            plotDir = parentDir + time + '/'
+            os.mkdir(plotDir)
         
         modelList = []
         for j in range(0,len(xDatas)):
@@ -58,29 +73,37 @@ class Model:
             yData = yDatas[j]   
             x_train,x_val,y_train,y_val,numDim = sig.preprocess(xData,yData)
             
-            model = self.__FOPTD()
-            #es = keras.callbacks.EarlyStopping(monitor='val_loss', mode='min',min_delta=0.000001)
+            if probabilistic:
+                 probModel = "prob"
+                 model = self.__FOPTD_probabilistic()
+            else:
+                probModel = ""
+                model = self.__FOPTD()
+                
+            MTC = MyThresholdCallback(0.95)
             print("Fit model on training data")
             history = model.fit(
                 x_train,
                 y_train,
                 batch_size=16,
-                epochs=100,
+                epochs=epochs,
                 # We pass some validation for
                 # monitoring validation loss and metrics
                 # at the end of each epoch
-                validation_data=(x_val, y_val)
-            )
+                validation_data=(x_val, y_val),
+                callbacks=[MTC]
+            )  
             
             modelList.append(model)
             self.modelDict[self.names[j]] = model
-
-            modelpath = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/"+self.names[j]+".h5"
-            fileOverwriter=0
-            while os.path.isfile(modelpath):
-                modelpath = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/"+self.names[j]+"_"+str(fileOverwriter)+".h5"
-                fileOverwriter+=1
-            model.save(modelpath)
+            
+            if saveModel:
+                modelpath = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/"+self.names[j]+probModel+".h5"
+                fileOverwriter=0
+                while os.path.isfile(modelpath):
+                    modelpath = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/"+self.names[j]+probModel+"_"+str(fileOverwriter)+".h5"
+                    fileOverwriter+=1
+                model.save(modelpath)
             
             if plotLoss:
                 plt.figure(dpi=100)
@@ -90,15 +113,32 @@ class Model:
                 plt.ylabel('loss')
                 plt.xlabel('epoch')
                 plt.legend(['train', 'test'], loc='upper left')
-                plt.savefig(plotDir+self.names[j]+'_loss'+'.png')
+                if saveModel:
+                    plt.savefig(plotDir+self.names[j]+'_loss'+'.png')
                 plt.show()
                 
+            if probabilistic:
+                predictions = modelList[j].predict(x_val)
+                yhat = model(x_val)
+                assert isinstance(yhat, tfd.Distribution)
+                m = np.array(yhat.mean())
+                s = np.array((yhat.stddev()))
             
-            predictions = modelList[j].predict(x_val)
+            isWithin = 0
+            for (i,mi) in enumerate(m):
+                true = y_val[i]
+                if ((m[i]+2*s[i] > true) and ((m[i]-2*s[i] < true))):
+                    isWithin+=1
+                else:
+                    continue
             
+            percentage = isWithin/len(m)
+            print(percentage)
+
             if plotVal:
                 plt.figure(dpi=100)
-                plt.plot(y_val,predictions,'g.')
+                plt.plot(y_val,m,'b.')
+                plt.errorbar(y_val,m,yerr=s*2,fmt='none',ecolor='green')
                 r2 =("r\u00b2 = %.3f" % r2_score(y_val,predictions))
 
                 plt.plot(np.linspace(0,10),np.linspace(0,10),'r--',label = r2)
@@ -107,31 +147,38 @@ class Model:
                 plt.ylabel('Predicted Value of ' + self.names[j])
                 plt.xlabel('True Value of ' + self.names[j])
                 plt.legend()
-                plt.savefig(plotDir+self.names[j]+'.png')
+                if saveModel:
+                    plt.savefig(plotDir+self.names[j]+'.png')
                 plt.show()
-        
+            
+        return m,s
+    
+    def MSE(self,y_true,y_pred):
+        mse = sum((y_true-y_pred)**2)
+        return mse
+    
     def predict(self,sig,plotPredict=True,savePredict=False):
         if not(isinstance(sig,Signal)):
             print("You need to predict with an instance of signal!")
             return
         
-        kpPredictions = self.modelDict['kp'].predict(sig.xData['kp'])
-        tauPredictions = self.modelDict['tau'].predict(sig.xData['tau'])
-        thetaPredictions = self.modelDict['theta'].predict(sig.xData['theta'])
+        self.kpPredictions = self.modelDict['kp'].predict(sig.xData['kp'])
+        self.tauPredictions = self.modelDict['tau'].predict(sig.xData['tau'])
+        self.thetaPredictions = self.modelDict['theta'].predict(sig.xData['theta'])
         
-        #sig = self.prepare_data(sig)
-        
+        self.errors = []
         uArrays = sig.uArray[sig.train,:]
         yArrays = sig.yArray[sig.train,:]
         
         for (i,index) in enumerate(sig.train):
-            taup = tauPredictions[i]
-            Kp = kpPredictions[i]
-            theta = thetaPredictions[i]
+            taup = self.tauPredictions[i]
+            Kp = self.kpPredictions[i]
+            theta = self.thetaPredictions[i]
             t = np.linspace(0,sig.timelength,self.nstep)
             u = uArrays[i,:]
             yPred = (odeint(sig.FOmodel,0,t,args=(t,u,Kp,taup,theta),hmax=1.).ravel())
             yTrue = yArrays[i,:]
+            self.errors.append(self.MSE(yPred,yTrue))
             
             if plotPredict:
                 plt.figure(dpi=100)
@@ -150,6 +197,7 @@ class Model:
             if savePredict:
                 savePath = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Predictions/" + str(i) + ".png"
                 plt.savefig(savePath)
+                
     
     def __FOPTD(self):
         model = keras.Sequential()
@@ -159,7 +207,7 @@ class Model:
         model.add(layers.Dense(100, activation='linear',))
         model.add(layers.Dense(1, activation='linear'))
         # Compile the model
-        model.compile(optimizer='adam', loss='mean_squared_error')
+        model.compile(optimizer='adam', loss='mean_squared_error',metrics=[self.coeff_determination])
         return model   
     
     def scale_data(self,sig):
@@ -180,6 +228,23 @@ class Model:
                 final result")
             self.outputScaler = outputMax/10
             sig.uArray = sig.uArray/outputMax
-            sig.yArray = sig.yArray/outputMax            
+            sig.yArray = sig.yArray/outputMax 
+    
+    def coeff_determination(self,y_true, y_pred):
+        SS_res =  K.sum(K.square( y_true-y_pred ))
+        SS_tot = K.sum(K.square( y_true - K.mean(y_true) ) )
+        return ( 1 - SS_res/(SS_tot + K.epsilon()) )
+
+    def __FOPTD_probabilistic(self): 
+        model = tf.keras.Sequential([
+        tf.keras.layers.GRU(100, activation='tanh',input_shape=(self.nstep,1)),
+        tf.keras.layers.Dense(100, activation='linear'),
+        tf.keras.layers.Dense(100, activation='linear'),
+        tf.keras.layers.Dense(1 + 1),
+        tfp.layers.DistributionLambda(
+              lambda t: tfd.Normal(loc=t[..., :1],scale= 0.5 + 50*(tf.math.softplus(0.05*t[...,1:])))),
+        ])
+        model.compile(optimizer='adam', loss='mean_squared_error',metrics=[self.coeff_determination])
+        return model
             
    

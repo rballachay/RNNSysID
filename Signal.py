@@ -80,8 +80,8 @@ class Signal:
     
     # Generate gaussian noise with mean and standard deviation
     # of 5% of the maximum returned value. 
-    def gaussNoise(self,array):
-        noise = np.random.normal(0,0.01,len(array))
+    def gaussNoise(self,array,stdev):
+        noise = np.random.normal(0,(stdev/100)*max(array),len(array))
         return array+noise
     
     # Central point derivative of continuous data to be used 
@@ -128,7 +128,7 @@ class Signal:
         return [dydt,dy2dt2]
     
     # Function which simulates a signal and returns it in whichever 
-    def training_simulation(self,KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10],zetaRange=[0.1,1]):
+    def training_simulation(self,KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10],zetaRange=[0.1,1],stdev=5):
         # Access all the attributes from initialization
         numTrials=self.numTrials; nstep=self.nstep;
         timelength=self.timelength; trainFrac=self.trainFrac
@@ -166,7 +166,7 @@ class Signal:
             theta = thetaSpace[index2]
             
             u = (self.PRBS())   
-            y = self.gaussNoise(odeint(self.FOmodel,0,t,args=(t,u,Kp,taup,theta),hmax=1.).ravel())
+            y = self.gaussNoise(odeint(self.FOmodel,0,t,args=(t,u,Kp,taup,theta),hmax=1.).ravel(),stdev)
             
             uArray[iterator,:] = u
             yArray[iterator,:]= y
@@ -243,11 +243,11 @@ class Signal:
     # This function makes it easier to run a bunch of simulations and 
     # automatically return the validation and testing sets without 
     # calling each function separately. 
-    def simulate_and_preprocess(self):
+    def simulate_and_preprocess(self,stdev):
         # Since no training is occurring, can skip separation of testing and validation sets
         self.trainFrac = 1
         
-        uArray,yArray,corrArray,conArray,taus,kps,thetas,train,test = self.training_simulation()
+        uArray,yArray,corrArray,conArray,taus,kps,thetas,train,test = self.training_simulation(stdev=stdev)
         xDatas = [yArray,yArray,(yArray-np.mean(yArray))/np.std(yArray) - uArray]
         yDatas = [taus, kps, thetas]
         
