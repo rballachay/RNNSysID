@@ -24,6 +24,10 @@ from tensorflow.keras import backend as K
 import datetime
 
 class MyThresholdCallback(tf.keras.callbacks.Callback):
+    """
+    Callback class to stop training model when a target
+    coefficient of determination is achieved on validation set.
+    """
     
     def __init__(self, threshold):
         super(MyThresholdCallback, self).__init__()
@@ -35,14 +39,49 @@ class MyThresholdCallback(tf.keras.callbacks.Callback):
             self.model.stop_training = True
             
 class Model:    
+    """
+    Class for fitting and predicting first order state space
+    models. All models are built to be used on pseudo-binary 
+    (aka step-input) data.
     
-    # Initialize the model instace 
-    def __init__(self,nstep,Modeltype='regular'):   
+    Builds models using keras with tensorflow backend. Currently
+    only works for SISO systems. Will work with MIMO in the future.
+    
+    The Purpose of this class is to fit theta, tau and kp for first
+    order systems using data simulated in the Signal class. Models are
+    stored using the h5 format and can be used to estimate accuracy. 
+    
+    Parameters
+    ----------
+    Modeltype : string, default='regular'
+        Two types of models exist: regular and probability. Probability 
+        model uses lamba function embedded at the final layer of keras
+        network to estimate mean and standard deviation for regression. 
+        Regular model is built using keras Dense output and probability
+        is estimated based on uncertainty in training data with a set 
+        gaussian noise with standard deviation stdev, set as a parameter
+        in the call to Signal. 
+        
+    nstep : int, default=100
+        Parameter shared with the signal class. Will inheret in the future.
+    
+    """
+    
+    """
+    Initialization function. Built-in attributes names and modeldict used 
+    to store models to predict each of three parameters in FOPTD T.F. 
+    """
+    def __init__(self,nstep=100,Modeltype='regular'):   
         self.Modeltype = Modeltype
         self.nstep=nstep
         self.names = ["kp","tau","theta"]
         self.modelDict = {}
     
+    """
+    Loads one of two first order models: probability or regular. Iterates over
+    directory and loads alphabetically. If more than 3 models exist in the 
+    directory, it will load them indiscriminately. 
+    """
     def load_FOPTD(self):
         modelList = []
         if self.Modeltype=='probability':
@@ -60,7 +99,36 @@ class Model:
         for i in range(0,3):
             self.modelDict[self.names[i]] = modelList[i]
 
+    """
+    Takes Signal object with input and output data, separates data in training
+    and validation sets, transform data for neural network and uses training 
+    set to produce neural network of specified architecture. 
     
+    Separate models are produced for each parameter. 
+        Kp: System response (y) and kp used to construct model
+        tau: System response (y) and tau used to construct model
+        theta: System input (u) and response (y) used to construct model
+    
+    Parameters
+    ----------
+    sig: Signal (object), default=False
+        Must provide instance of signal class in order to build model or use
+        for prediction. Else, will fail to train. 
+    
+    plotLoss: bool, default=True
+        Plot training and validation loss after training finishes. Saves to 
+        a folder with the date and time if saveModel is set to true.
+    
+    plotVal: bool, default=True
+        Plots validation data with coefficient of determination after training
+        model. Saves to a folder with the date and time if saveModel is 
+        set to true.
+        
+    probabilistic: bool, default=True
+        Choice between probabilistic model (calls FOPTD_probabilistic) and 
+        regular (FOPTD). If regular, prediction will include uncertainties
+        built in with the validation set.    
+    """
     def train_FOPTD(self,sig=False,plotLoss=True,plotVal=True,probabilistic=True,epochs=100,saveModel=True):
         yArray = sig.yArray; uArray = sig.uArray
         taus=sig.taus; kps=sig.kps; thetas=sig.thetas
@@ -72,12 +140,15 @@ class Model:
             print("Please initialize the class signal with model parameters first")
             return 
         
+        # If the loss and accuracy plots are gonna be saved, saveModel must = True
         if saveModel:
             parentDir = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/"
             time = str(datetime.datetime.now())[:16]
             plotDir = parentDir + time + '/'
             os.mkdir(plotDir)
         
+        # iterate over each of the parameters, train the model, save to the model
+        # path and plot loss and validation curves
         modelList = []
         for j in range(0,len(xDatas)):
             xData = xDatas[j]
@@ -108,6 +179,7 @@ class Model:
             modelList.append(model)
             self.modelDict[self.names[j]] = model
             
+            # Only save model if true
             if saveModel:
                 modelpath = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/"+self.names[j]+probModel+".h5"
                 fileOverwriter=0
@@ -134,17 +206,6 @@ class Model:
                 assert isinstance(yhat, tfd.Distribution)
                 m = np.array(yhat.mean())
                 s = np.array((yhat.stddev()))
-            
-            isWithin = 0
-            for (i,mi) in enumerate(m):
-                true = y_val[i]
-                if ((m[i]+2*s[i] > true) and ((m[i]-2*s[i] < true))):
-                    isWithin+=1
-                else:
-                    continue
-            
-            percentage = isWithin/len(m)
-            print(percentage)
 
             if plotVal:
                 plt.figure(dpi=100)
@@ -164,10 +225,13 @@ class Model:
             
         return m,s
     
+    """
+    Calculate mean squared error of predicted and actual system response.
+    """
     def MSE(self,y_true,y_pred):
         mse = sum((y_true-y_pred)**2)
         return mse
-    
+
     def predict(self,sig,plotPredict=True,savePredict=False):
         if not(isinstance(sig,Signal)):
             print("You need to predict with an instance of signal!")

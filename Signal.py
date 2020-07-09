@@ -20,11 +20,87 @@ from scipy.stats import kurtosis,skew,entropy,variation,gmean
 from sklearn.metrics import r2_score
 from mpl_toolkits.mplot3d import Axes3D
 
+
 class Signal:
- 
+    """
+    Class that produces input signals and output of system response.
+    
+    Uses either a wave-based input signal created using hann signal 
+    or a pseudo-binary input signal with 2-10 steps in the signal window.
+    System response can currently only be simulated as first order plus time
+    delay SISO. In the future, MIMO will also be utilized. 
+    
+    The purpose of this class is to produce random input and output signals 
+    from simulated systems that can be used to train the class Model, which
+    will then predict the system parameters of other first-order systems. 
+    
+    Parameters
+    ----------
+    numTrials : int, default=100
+        Integer ideally bounded between 10-1000. Warning, simulation can take
+        a very long time if greater than 1000. Will determine the number 
+        of simulations produced.
+    
+    nstep : int, default=100
+        Number of steps in time frame. Majority of indexing used in signal 
+        and response depend on the index of the time and input signal array,
+        so this can be more important than timelength.
+        
+    timelength : float, default=100.
+        The length of the interpreted input/output signal data. In order to 
+        scale time constants appropriately, must be in seconds. Need more robust
+        scaling method for absolute value of system parameters.
+    
+    trainFrac : float, default=0.7
+        The fraction of data used for validation/testing after fitting model.
+        If model is only used to predict, trainFrac is forced to 1.
+    
+    stdev : float, default=5.
+        The standard deviation of Gaussian noise applied to output signal data
+        to simulate error in real-world measurements. 
+    
+    Attributes
+    ----------
+    random_signal 
+        Generates hann windows with varying width and amplitude and appends to
+        produce a pseudo-random wave sequence. 
+    
+    PRBS
+        Generates a pseudo-random binary signal with varying width. Frequency is
+        random, depends on probability switch. 10% probability that the signal
+        changes sign every time step. Average step width of 6.5.
+        
+    plot_parameter_space
+        Produces 3D plot of all simulated parameters (tau,kp,theta)
+    
+    gauss_noise
+        Adds gaussian noise to input sequence and returns array with noise.
+        
+    find_nearest
+        odeint is built to take constant or functions as attributes. In this case,
+        u is an array, so find_nearest is used to find the nearest value in u array.
+    
+    FOmodel
+        First order plus time delay model in state space format.
+    
+    training_simulation
+        Iterates over the input parameter space and produces simulations which
+        will subsequently be used to train a model.
+    
+    preprocess
+        Separates data into training and validation sets and reshapes for input
+        to the GRU model. 
+    
+    simulate_and_preprocess
+        Function which produces data to be used directly in prediction. Cannot be 
+        used if data is to be used in training.
+
+    
+    """
+    
     # Going to need this to be interactive 
     # i.e. the function waits until the 
-    def __init__(self,numTrials,nstep,timelength,trainFrac,numPlots=5,stdev=5):
+    def __init__(self,numTrials=100,nstep=100,timelength=100,trainFrac=0.7,numPlots=5,stdev=5):
         self.numTrials = numTrials
         self.nstep = nstep
         self.timelength = timelength
@@ -65,7 +141,7 @@ class Signal:
  
     # This function plots the parameter space for a first 
     # order plus time delay model in 3D coordinates
-    def plotParameterSpace(self,x,y,z,trainID,valID):
+    def plot_parameter_space(self,x,y,z,trainID,valID):
         x=np.array(x); y=np.array(y); z=np.array(z)
         figgy = plt.figure(dpi=200)
         ax = Axes3D(figgy)
@@ -81,22 +157,9 @@ class Signal:
     
     # Generate gaussian noise with mean and standard deviation
     # of 5% of the maximum returned value. 
-    def gaussNoise(self,array,stdev):
+    def gauss_noise(self,array,stdev):
         noise = np.random.normal(0,(stdev/100)*max(array),len(array))
         return array+noise
-    
-    # Central point derivative of continuous data to be used 
-    # in second order process modelling
-    def CPMethod(self,array,timestep):
-        derivative = [np.mean(array[i-1:i+1])/(2*timestep) for i in range(1,len(array)-1)]
-        
-        initial =(array[1] - array[0])/timestep
-        derivative.insert(0,initial)
-        
-        final = (array[-1] - array[-2])/timestep
-        derivative.insert(len(derivative),final)
-        
-        return derivative
     
     # Function which is used in combination with the ODEint method in
     # order to use input U as a quasi-continuous array
@@ -117,16 +180,6 @@ class Signal:
             u = inputarray[index]
         return (-y + Kp * u)/taup
     
-    # Second order plus time delay model to be used for simulation once 
-    # the fundamentals for first order plus time delay are hammered out
-    def SOmodel(self,yy,t,timearray,inputarray,Kp,tau,zeta,theta):
-        t=t-theta
-        index = self.find_nearest(timearray,t)
-        du = (inputarray[index])
-        y = yy[0]
-        dydt = yy[1]
-        dy2dt2 = (-2.0*zeta*tau*dydt - y + Kp*du)/tau**2
-        return [dydt,dy2dt2]
     
     # Function which simulates a signal and returns it in whichever 
     def training_simulation(self,KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10],zetaRange=[0.1,1],stdev=5):
@@ -167,7 +220,7 @@ class Signal:
             theta = thetaSpace[index2]
             
             u = (self.PRBS())   
-            y = self.gaussNoise(odeint(self.FOmodel,0,t,args=(t,u,Kp,taup,theta),hmax=1.).ravel(),stdev)
+            y = self.gauss_noise(odeint(self.FOmodel,0,t,args=(t,u,Kp,taup,theta),hmax=1.).ravel(),stdev)
             
             uArray[iterator,:] = u
             yArray[iterator,:]= y
@@ -209,7 +262,7 @@ class Signal:
         
         # Make it so that any of these attributes can be accessed 
         # without needing to return them all from the function
-        self.plotParameterSpace(taus,kps,thetas,train,test)
+        self.plot_parameter_space(taus,kps,thetas,train,test)
         self.uArray = uArray
         self.yArray = yArray
         self.correlation = correlation
