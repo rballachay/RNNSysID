@@ -63,7 +63,7 @@ class Model:
         in the call to Signal. 
         
     nstep : int, default=100
-        Parameter shared with the signal class. Will inheret in the future.
+        Parameter shared with the signal class. Will inherit in the future.
     
     """
     
