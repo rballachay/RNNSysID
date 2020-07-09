@@ -21,7 +21,7 @@ trainFrac = .7
 
 # Calls the module Signal with the initialization parameters
 # then simulates using the initialized model
-sig = Signal(numTrials,nstep,timelength,trainFrac,stdev=5)
+sig = Signal(numTrials,nstep,timelength,trainFrac,stdev=1)
 #sig.training_simulation(KpRange=[0.75,10.5],tauRange=[0.75,10.5],thetaRange=[0.75,10.5])
 
 """
@@ -36,7 +36,7 @@ trainModel.train_FOPTD(sig,epochs=200)
 xData,yData = sig.simulate_and_preprocess()
 
 # Initialize the models that are saved using the parameters declared above
-predictor = Model(nstep,Modeltype='probability')
+predictor = Model(nstep,Modeltype='regular')
 predictor.load_FOPTD()
 
 # Function to make predictions based off the simulation 

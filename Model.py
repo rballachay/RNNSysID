@@ -216,7 +216,7 @@ class Model:
                 plt.figure(dpi=100)
                 plt.plot(t,u,label='Input Signal')
                 
-                s1 = ("Modelled: Kp:%.1f τ:%.1f θ:%.1f" % (sig.kps[i],sig.taus[i],sig.thetas[i]))
+                s1 = ("Modelled: Kp:%.1f τ:%.1f θ:%.1f  %i%% Noise" % (sig.kps[i],sig.taus[i],sig.thetas[i],sig.stdev))
                 s2 = ("Predicted: Kp:%.1f (%.1f) τ:%.1f (%.1f) θ:%.1f (%.1f)" % (Kp,Kperror,taup,tauperror,theta,thetaerror))
 
                 plt.plot(t,yTrue, label=s1)
