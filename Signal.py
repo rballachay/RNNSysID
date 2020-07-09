@@ -24,13 +24,14 @@ class Signal:
  
     # Going to need this to be interactive 
     # i.e. the function waits until the 
-    def __init__(self,numTrials,nstep,timelength,trainFrac,numPlots=5):
+    def __init__(self,numTrials,nstep,timelength,trainFrac,numPlots=5,stdev=5):
         self.numTrials = numTrials
         self.nstep = nstep
         self.timelength = timelength
         self.trainFrac = trainFrac
         self.valFrac = 1-trainFrac
         self.numPlots = numPlots
+        self.stdev=stdev
 
     # This module is for simulating a wave function with 
     # random frequency and amplitude within the specified range
@@ -243,11 +244,11 @@ class Signal:
     # This function makes it easier to run a bunch of simulations and 
     # automatically return the validation and testing sets without 
     # calling each function separately. 
-    def simulate_and_preprocess(self,stdev):
+    def simulate_and_preprocess(self):
         # Since no training is occurring, can skip separation of testing and validation sets
         self.trainFrac = 1
         
-        uArray,yArray,corrArray,conArray,taus,kps,thetas,train,test = self.training_simulation(stdev=stdev)
+        uArray,yArray,corrArray,conArray,taus,kps,thetas,train,test = self.training_simulation(stdev=self.stdev)
         xDatas = [yArray,yArray,(yArray-np.mean(yArray))/np.std(yArray) - uArray]
         yDatas = [taus, kps, thetas]
         
