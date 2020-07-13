@@ -19,7 +19,8 @@ from sklearn.preprocessing import StandardScaler
 from scipy.stats import kurtosis,skew,entropy,variation,gmean
 from sklearn.metrics import r2_score
 from mpl_toolkits.mplot3d import Axes3D
-
+import control as control
+import control.matlab as matlab
 
 class Signal:
     """
@@ -158,28 +159,10 @@ class Signal:
     # Generate gaussian noise with mean and standard deviation
     # of 5% of the maximum returned value. 
     def gauss_noise(self,array,stdev):
-        noise = np.random.normal(0,(stdev/100)*max(array),len(array))
+        length = len(array)
+            
+        noise = np.random.normal(0,(stdev/100)*np.amax(array),(length,))
         return array+noise
-    
-    # Function which is used in combination with the ODEint method in
-    # order to use input U as a quasi-continuous array
-    def find_nearest(self,array, value):
-        array = np.asarray(array)
-        idx = (np.abs(array - value)).argmin()
-        return idx
-    
-    # First order plus time delay model to be used for simulation
-    # Note that this model includes time delay implicit within 
-    # t=t-theta. 
-    def FOmodel(self,y,t,timearray,inputarray,Kp,taup,theta): 
-        t=t-theta
-        if t<0:
-            u=0
-        else:
-            index = self.find_nearest(timearray,t)
-            u = inputarray[index]
-        return (-y + Kp * u)/taup
-    
     
     # Function which simulates a signal and returns it in whichever 
     def training_simulation(self,KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10],zetaRange=[0.1,1],stdev=5):
@@ -190,15 +173,11 @@ class Signal:
         # Initialize the arrays which will store the simulation data
         uArray = np.full((numTrials,nstep),0.)
         yArray = np.full((numTrials,nstep),0.)
-        y_1Array = np.full((numTrials,nstep),0.)
-        corrArray = np.full((numTrials,nstep),0.)
-        conArray = np.full((numTrials,nstep),0.)
         
         # Make arrays containing parameters tau, theta
         KpSpace = np.linspace(KpRange[0],KpRange[1],nstep)
         taupSpace = np.linspace(tauRange[0],tauRange[1],nstep)
-        zetaSpace = np.linspace(zetaRange[0],zetaRange[1],nstep)
-        thetaSpace = np.linspace(thetaRange[0],thetaRange[1],nstep)
+        thetaSpace = np.arange(thetaRange[0],thetaRange[1])
         
         KpSpace[KpSpace==0] = 0.01
         taupSpace[taupSpace==0] = 0.01
@@ -207,45 +186,41 @@ class Signal:
         taus = []
         thetas=[]
         kps=[]
-        t = np.linspace(0,timelength,nstep)
         iterator=0
         
         while(iterator<numTrials):
             index = np.random.randint(0,nstep)
             index1 = np.random.randint(0,nstep)
-            index2 = np.random.randint(0,nstep) 
+            index2 = np.random.randint(0,9) 
             
             Kp = KpSpace[index]
             taup = taupSpace[index1]
             theta = thetaSpace[index2]
             
-            u = (self.PRBS())   
-            y = self.gauss_noise(odeint(self.FOmodel,0,t,args=(t,u,Kp,taup,theta),hmax=1.).ravel(),stdev)
+            u = (self.PRBS())  
+            
+            t = np.linspace(0,timelength,nstep)
+            tsim = t - theta
+            yindStart = next((i for i, x in enumerate(tsim) if x>0), None)
+            tInclude = tsim[yindStart-1:]
+            uInclude = u[yindStart-1:]
+            sys = control.tf([Kp,] ,[taup,1.])
+            _,yEnd,_ = control.forced_response(sys,U=uInclude,T=tInclude)
+            yEnd = self.gauss_noise(yEnd,stdev)
+            y = np.concatenate((np.zeros((len(t)-len(tInclude))),yEnd))
             
             uArray[iterator,:] = u
             yArray[iterator,:]= y
             taus.append(taup)
             thetas.append(theta)
             kps.append(Kp)
-            
-            convolution =  signal.convolve(u, y, mode='same')
-            convolution  = (convolution-np.mean(convolution))/np.std(convolution)
-            
-            correlation = signal.correlate(u,y,mode='same')
-            correlation = (correlation-np.mean(correlation))/np.std(correlation)
-            
-            corrArray[iterator,:] = correlation
-            conArray[iterator,:] = convolution
-            
-            
+
             # Only plot every 100 input signals
             if (iterator)<self.numPlots:
                 plt.figure(dpi=100)
                 plt.plot(t[:200],u[:200],label='Input Signal')
                 plt.plot(t[:200],y[:200], label='FOPTD Response')
-                #plt.plot(t,correlation,label='Correlated')
-                #plt.plot(t,convolution,label='Convolution')
-                plt.xlabel((taup))
+                plt.xlabel((theta))
                 plt.legend()
                 plt.show()
                 
@@ -265,16 +240,73 @@ class Signal:
         self.plot_parameter_space(taus,kps,thetas,train,test)
         self.uArray = uArray
         self.yArray = yArray
-        self.correlation = correlation
-        self.convolution = convolution
         self.taus = taus
         self.kps = kps
         self.thetas = thetas
         self.train = train
         self.test = test
         
-        return uArray,yArray,corrArray,conArray,taus,kps,thetas,train,test
+        return uArray,yArray,taus,kps,thetas,train,test
     
+    def MIMO_simulation(self,stdev=5,inDim=2,outDim=2,KpRange=[1,10],tauRange=[1,10]):
+        # Access all the attributes from initialization
+        numTrials=self.numTrials; nstep=self.nstep;
+        timelength=self.timelength; trainFrac=self.trainFrac
+        
+        
+        # Initialize the arrays which will store the simulation data
+        uArray = np.full((numTrials,nstep,inDim),0.)
+        yArray = np.full((numTrials,nstep,outDim),0.)
+        KpArray = np.full((numTrials,outDim*inDim),0.)
+        tauArray = np.full((numTrials,outDim*inDim),0.)
+        
+        # Make arrays containing parameters tau, theta
+        KpSpace = np.linspace(KpRange[0],KpRange[1],nstep)
+        taupSpace = np.linspace(tauRange[0],tauRange[1],nstep)
+        t = np.linspace(0,timelength,nstep)
+        
+        iterator=0
+        while(iterator<numTrials):
+            u = self.PRBS()
+            for i in range(1,inDim):
+                prbs = self.PRBS()
+                u = np.stack((u,prbs),axis=1)
+            
+            uArray[iterator,:,:] = u
+            
+            nums = []
+            dens = []
+
+            for j in range(0,outDim):
+                numTemp = []
+                denTemp = []
+                for i in range(0,inDim):
+                    index = np.random.randint(0,nstep)
+                    KpArray[iterator,j] = KpSpace[index]
+                    numTemp.append([KpSpace[index]])
+                    tauArray[iterator,3-j] = taupSpace[index]
+                    denTemp.append([taupSpace[index],1.])
+                nums.append(numTemp)
+                dens.append(denTemp)
+                
+            nums=np.array(nums)
+            dens=np.array(dens)
+            sys = control.tf(nums,dens)
+            _,y,_ = control.forced_response(sys,U=np.transpose(u),T=t)
+            y = self.gauss_noise(y,stdev)
+
+                # Only plot every 100 input signals
+            if (iterator)<100:
+                plt.figure(dpi=100)
+                plt.plot(t[:200],u[:200],label='Input Signal')
+                for yDim in range(0,outDim):
+                    plt.plot(t[:200],y[yDim][:200], label='FOPTD Response')
+                plt.legend()
+                plt.show()
+                
+            # Subsequently update the iterator to move down row
+            iterator+=1
+            
     # This function uses the training and testing indices produced during
     # simulate() to segregate the training and validation sets
     def preprocess(self,xData,yData):

@@ -132,7 +132,7 @@ class Model:
     def train_FOPTD(self,sig=False,plotLoss=True,plotVal=True,probabilistic=True,epochs=100,saveModel=True):
         yArray = sig.yArray; uArray = sig.uArray
         taus=sig.taus; kps=sig.kps; thetas=sig.thetas
-        xDatas = [yArray,yArray,(yArray-np.mean(yArray))/np.std(yArray) - uArray]
+        xDatas = [yArray,yArray*uArray,(yArray-np.mean(yArray))/np.std(yArray) - uArray]
         yDatas = [kps, taus, thetas]
         
         # You have to construct a signal with all the necessary parameters before 
