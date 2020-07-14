@@ -82,12 +82,12 @@ class Model:
     directory and loads alphabetically. If more than 3 models exist in the 
     directory, it will load them indiscriminately. 
     """
-    def load_FOPTD(self):
+    def load_SISO(self):
         modelList = []
         if self.Modeltype=='probability':
-            loadDir = '/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/Integrated Models/Probability/'
+            loadDir = '/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/Integrated Models/SISO/Probability/'
         else:
-            loadDir = '/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/Integrated Models/Regular/'
+            loadDir = '/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/Integrated Models/SISO/Regular/'
             
         for filename in os.listdir(loadDir):
             if filename.endswith(".h5"):
@@ -102,7 +102,8 @@ class Model:
     """
     Takes Signal object with input and output data, separates data in training
     and validation sets, transform data for neural network and uses training 
-    set to produce neural network of specified architecture. 
+    set to produce neural network of specified architecture. Works for SISO 
+    first order plus dead time data. 
     
     Separate models are produced for each parameter. 
         Kp: System response (y) and kp used to construct model
@@ -127,9 +128,12 @@ class Model:
     probabilistic: bool, default=True
         Choice between probabilistic model (calls FOPTD_probabilistic) and 
         regular (FOPTD). If regular, prediction will include uncertainties
-        built in with the validation set.    
+        built in with the validation set.   
+        
+    saveModel: bool, default=True
+        Decide whether or not to save the models from training 
     """
-    def train_FOPTD(self,sig=False,plotLoss=True,plotVal=True,probabilistic=True,epochs=100,saveModel=True):
+    def train_SISO(self,sig=False,plotLoss=True,plotVal=True,probabilistic=True,epochs=100,saveModel=True):
         yArray = sig.yArray; uArray = sig.uArray
         taus=sig.taus; kps=sig.kps; thetas=sig.thetas
         xDatas = [yArray,yArray*uArray,(yArray-np.mean(yArray))/np.std(yArray) - uArray]
@@ -181,10 +185,10 @@ class Model:
             
             # Only save model if true
             if saveModel:
-                modelpath = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/"+self.names[j]+probModel+".h5"
+                modelpath = plotDir+self.names[j]+probModel+".h5"
                 fileOverwriter=0
                 while os.path.isfile(modelpath):
-                    modelpath = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/"+self.names[j]+probModel+"_"+str(fileOverwriter)+".h5"
+                    modelpath = plotDir+self.names[j]+probModel+"_"+str(fileOverwriter)+".h5"
                     fileOverwriter+=1
                 model.save(modelpath)
             
@@ -225,6 +229,124 @@ class Model:
             
         return m,s
     
+    
+    def train_MIMO(self,sig=False,plotLoss=True,plotVal=True,epochs=100,saveModel=True):
+        # Get attributes stored in signal object
+        yArray = sig.yArray; uArray = sig.uArray
+        taus=sig.taus; kps=sig.kps
+        parameters = ['kp','tau']
+        
+        # You have to construct a signal with all the necessary parameters before 
+        if not(sig):
+            print("Please initialize the class signal with model parameters first")
+            return 
+        
+        # If the loss and accuracy plots are gonna be saved, saveModel must = True
+        if saveModel:
+            parentDir = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/"
+            time = str(datetime.datetime.now())[:16]
+            plotDir = parentDir + time + '/'
+            os.mkdir(plotDir)
+        
+        # iterate over each of the parameters, train the model, save to the model
+        # path and plot loss and validation curves
+        modelList = []
+        
+        # Iterate over tau and kp parameters
+        for (k,parameter) in enumerate(parameters):
+            a,b,c = np.shape(uArray)
+            xData = np.full((a*sig.outDim,b,c),0.)
+            yData = np.full((a*sig.outDim,sig.inDim),0.)
+            
+            # Develop separate model for each output variable
+            if parameter=='kp':
+                yData[:a,:] = kps[:,:2]
+                yData[a:,:]  = kps[:,2:]
+                xData[:a,:,0] = uArray[:,:,0]*yArray[:,:,0]
+                xData[:a,:,1] = uArray[:,:,1]*yArray[:,:,0]
+                xData[a:,:,0] = uArray[:,:,0]*yArray[:,:,1]
+                xData[a:,:,1] = uArray[:,:,1]*yArray[:,:,1]    
+            else:
+                yData[:a,:] = taus[:,:2]
+                yData[a:,:]  = taus[:,2:]
+                xData[:a,:,0] = yArray[:,:,0] * uArray[:,:,0]
+                xData[:a,:,1] = yArray[:,:,0] * uArray[:,:,1]
+                xData[a:,:,0] = yArray[:,:,1] * uArray[:,:,0]
+                xData[a:,:,1] = yArray[:,:,1] * uArray[:,:,1]
+            
+            x_train,x_val,y_train,y_val,numDim = sig.preprocess(xData,yData)
+            
+            if parameter=='kp':
+                model = self.__MIMO_kp()
+            else:
+                model = self.__MIMO_tau()
+            
+            # Set threshold to stop training when coefficient of determination
+            # gets to 0.9. 
+            MTC = MyThresholdCallback(0.95)
+            print("Fit model on training data")
+            history = model.fit(
+                x_train,
+                y_train,
+                batch_size=64,
+                epochs=epochs,
+                # We pass some validation for
+                # monitoring validation loss and metrics
+                # at the end of each epoch
+                validation_data=(x_val, y_val),
+                callbacks=[MTC]
+            )  
+            
+            modelList.append(model)
+            self.modelDict[self.names[k]] = model
+            predictions = modelList[k].predict(x_val)
+            
+            # Only save model if true
+            if saveModel:
+                modelpath = plotDir+self.names[k]+".h5"
+                fileOverwriter=0
+                while os.path.isfile(modelpath):
+                    modelpath = plotDir+self.names[k]+"_"+str(fileOverwriter)+".h5"
+                    fileOverwriter+=1
+                model.save(modelpath)
+            
+            if plotLoss:
+                plt.figure(dpi=100)
+                plt.plot(history.history['loss'])
+                plt.plot(history.history['val_loss'])
+                plt.title('model loss for '+ self.names[k])
+                plt.ylabel('loss')
+                plt.xlabel('epoch')
+                plt.legend(['train', 'test'], loc='upper left')
+                if saveModel:
+                    plt.savefig(plotDir+self.names[k]+'_loss'+'.png')
+                plt.show()
+    
+            if plotVal:
+                fig, (ax1, ax2) = plt.subplots(1, 2,dpi=200) 
+                fig.add_subplot(111, frameon=False)
+                plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
+                
+                ax1.plot(y_val[:,0],predictions[:,0],'.b',label=parameter)
+                r2 =("r\u00b2 = %.3f" % r2_score(y_val[:,0],predictions[:,0]))
+                ax1.plot(np.linspace(0,10),np.linspace(0,10),'--r',label = r2)
+                ax1.legend(prop={'size': 8})
+                
+                ax2.plot(y_val[:,0],predictions[:,0],'.b',label=parameter)
+                r2 =("r\u00b2 = %.3f" % r2_score(y_val[:,1],predictions[:,1]))
+                ax2.plot(np.linspace(0,10),np.linspace(0,10),'--r',label = r2)
+                ax2.legend(prop={'size': 8})
+                
+                plt.ylabel("Predicted Value of "+self.names[k])
+                plt.xlabel("True Value of "+self.names[k])
+
+                if saveModel:
+                    plt.savefig(plotDir+self.names[k]+'.png')
+                plt.show()  
+        
+        return  
+ 
+    
     """
     Calculate mean squared error of predicted and actual system response.
     """
@@ -232,7 +354,7 @@ class Model:
         mse = sum((y_true-y_pred)**2)
         return mse
 
-    def predict(self,sig,plotPredict=True,savePredict=False):
+    def predict_SISO(self,sig,plotPredict=True,savePredict=False):
         if not(isinstance(sig,Signal)):
             print("You need to predict with an instance of signal!")
             return
@@ -293,7 +415,52 @@ class Model:
             if savePredict:
                 savePath = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Predictions/" + str(i) + ".png"
                 plt.savefig(savePath)
+    
+    def predict_MIMO(self,sig,plotPredict=True,savePredict=False):
+        if not(isinstance(sig,Signal)):
+            print("You need to predict with an instance of signal!")
+            return
+        
+        prob = Probability(maxError=sig.stdev)
+        Kperror,tauperror,thetaerror = prob.get_errors()
+    
+        self.kpPredictions = self.modelDict['kp'].predict(sig.xData['kp'])
+        self.tauPredictions = self.modelDict['tau'].predict(sig.xData['tau'])
+        self.thetaPredictions = self.modelDict['theta'].predict(sig.xData['theta'])
+            
+        self.errors = []
+        uArrays = sig.uArray[sig.train,:,:]
+        yArrays = sig.yArray[sig.train,:,:]
+        
+        for (i,index) in enumerate(sig.train):
+            taup = self.tauPredictions[i]
+            Kp = self.kpPredictions[i]
+            theta = self.thetaPredictions[i]
+            
+            t = np.linspace(0,sig.timelength,self.nstep)
+            u = uArrays[i,:]
+            yPred = (odeint(sig.FOmodel,0,t,args=(t,u,Kp,taup,theta),hmax=1.).ravel())
+            yTrue = yArrays[i,:]
+            self.errors.append(self.MSE(yPred,yTrue))
+            
+            if plotPredict:
+                plt.figure(dpi=100)
+                plt.plot(t,u,label='Input Signal')
+                
+                s1 = ("Modelled: Kp:%.1f τ:%.1f θ:%.1f  %i%% Noise" % (sig.kps[i],sig.taus[i],sig.thetas[i],sig.stdev))
+                s2 = ("Predicted: Kp:%.1f (%.1f) τ:%.1f (%.1f) θ:%.1f (%.1f)" % (Kp,Kperror,taup,tauperror,theta,thetaerror))
 
+                plt.plot(t,yTrue, label=s1)
+                plt.plot(t,yPred,'--', label=s2)
+                plt.xlabel("Time (s)")
+                plt.ylabel("Change from set point")
+                
+                plt.legend()
+           
+            if savePredict:
+                savePath = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Predictions/" + str(i) + ".png"
+                plt.savefig(savePath)
+                
     def coeff_determination(self,y_true, y_pred):
         SS_res =  K.sum(K.square( y_true-y_pred ))
         SS_tot = K.sum(K.square( y_true - K.mean(y_true) ) )
@@ -310,6 +477,28 @@ class Model:
         model.compile(optimizer='adam', loss='mean_squared_error',metrics=[self.coeff_determination])
         return model   
     
+    def __MIMO_kp(self):
+        model = keras.Sequential()
+        # I tried almost every permuation of LSTM architecture and couldn't get it to work
+        model.add(layers.GRU(100, activation='tanh',input_shape=(self.nstep,2)))
+        model.add(layers.Dense(100, activation='linear',))
+        model.add(layers.Dense(100, activation='linear',))
+        model.add(layers.Dense(2, activation='linear'))
+        # Compile the model
+        model.compile(optimizer='adam', loss='mean_squared_error',metrics=[self.coeff_determination])
+        return model 
+    
+    def __MIMO_tau(self):
+        model = keras.Sequential()
+        # I tried almost every permuation of LSTM architecture and couldn't get it to work
+        model.add(layers.GRU(100, activation='tanh',input_shape=(self.nstep,2)))
+        model.add(layers.Dense(300, activation='linear',))
+        model.add(layers.Dense(300, activation='linear',))
+        model.add(layers.Dense(2, activation='linear'))
+        # Compile the model
+        model.compile(optimizer='adam', loss='mean_squared_error',metrics=[self.coeff_determination])
+        return model 
+        
     def scale_data(self,sig):
         inputMax = np.max(np.abs(sig.uArray))
         outputMax = np.max(np.abs(sig.yArray))

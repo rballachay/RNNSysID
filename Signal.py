@@ -142,30 +142,40 @@ class Signal:
  
     # This function plots the parameter space for a first 
     # order plus time delay model in 3D coordinates
-    def plot_parameter_space(self,x,y,z,trainID,valID):
-        x=np.array(x); y=np.array(y); z=np.array(z)
-        figgy = plt.figure(dpi=200)
-        ax = Axes3D(figgy)
-        xT = x[trainID]; xV = x[valID] 
-        yT = y[trainID]; yV = y[valID]
-        zT = z[trainID]; zV = z[valID]
-        ax.scatter(xT,yT,zT,c='g',label="Training Data")
-        ax.scatter(xV,yV,zV,c='purple',label="Validation Data")
-        ax.set_xlabel("τ (Time Constant)")
-        ax.set_ylabel("Kp (Gain)")
-        ax.set_zlabel("θ (Delay)")
-        ax.legend()
+    def plot_parameter_space(self,x,y,trainID,valID,z=False):
+        if z:
+            x=np.array(x); y=np.array(y); z=np.array(z)
+            figgy = plt.figure(dpi=200)
+            ax = Axes3D(figgy)
+            xT = x[trainID]; xV = x[valID] 
+            yT = y[trainID]; yV = y[valID]
+            zT = z[trainID]; zV = z[valID]
+            ax.scatter(xT,yT,zT,c='g',label="Training Data")
+            ax.scatter(xV,yV,zV,c='purple',label="Validation Data")
+            ax.set_xlabel("τ (Time Constant)")
+            ax.set_ylabel("Kp (Gain)")
+            ax.set_zlabel("θ (Delay)")
+            ax.legend()
+        else:
+            x = np.array(x.ravel()); y = np.array(y.ravel())
+            plt.figure(dpi=200)
+            plt.plot(x,y,'.b')
+            plt.ylabel("τ (Time Constant)")
+            plt.xlabel("Kp (Gain)")
     
     # Generate gaussian noise with mean and standard deviation
     # of 5% of the maximum returned value. 
     def gauss_noise(self,array,stdev):
-        length = len(array)
-            
-        noise = np.random.normal(0,(stdev/100)*np.amax(array),(length,))
+        try:
+            length,width = np.shape(array)
+            noise = np.random.normal(0,(stdev/100)*np.amax(array),(length,width))
+        except:
+            length = len(array)
+            noise = np.random.normal(0,(stdev/100)*np.amax(array),(length,))
         return array+noise
     
     # Function which simulates a signal and returns it in whichever 
-    def training_simulation(self,KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10],zetaRange=[0.1,1],stdev=5):
+    def SISO_simulation(self,KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10],zetaRange=[0.1,1],stdev=5):
         # Access all the attributes from initialization
         numTrials=self.numTrials; nstep=self.nstep;
         timelength=self.timelength; trainFrac=self.trainFrac
@@ -237,7 +247,7 @@ class Signal:
         
         # Make it so that any of these attributes can be accessed 
         # without needing to return them all from the function
-        self.plot_parameter_space(taus,kps,thetas,train,test)
+        self.plot_parameter_space(taus,kps,train,test,thetas)
         self.uArray = uArray
         self.yArray = yArray
         self.taus = taus
@@ -252,13 +262,14 @@ class Signal:
         # Access all the attributes from initialization
         numTrials=self.numTrials; nstep=self.nstep;
         timelength=self.timelength; trainFrac=self.trainFrac
-        
+        self.inDim = inDim; self.outDim = outDim
         
         # Initialize the arrays which will store the simulation data
         uArray = np.full((numTrials,nstep,inDim),0.)
         yArray = np.full((numTrials,nstep,outDim),0.)
         KpArray = np.full((numTrials,outDim*inDim),0.)
         tauArray = np.full((numTrials,outDim*inDim),0.)
+        orderList = []
         
         # Make arrays containing parameters tau, theta
         KpSpace = np.linspace(KpRange[0],KpRange[1],nstep)
@@ -276,16 +287,23 @@ class Signal:
             
             nums = []
             dens = []
-
+            
+            # The transfer function from the 2nd input to the 1st output is
+            # (3s + 4) / (6s^2 + 5s + 4).
+            # num = [[[1., 2.], [3., 4.]], [[5., 6.], [7., 8.]]]
             for j in range(0,outDim):
                 numTemp = []
                 denTemp = []
                 for i in range(0,inDim):
+                    if len(orderList)<(outDim*inDim):
+                        string = "Input # " + str(i+1) + " Output # " + str(j+1)
+                        orderList.append(string)
                     index = np.random.randint(0,nstep)
-                    KpArray[iterator,j] = KpSpace[index]
+                    index2 = np.random.randint(0,nstep)
+                    KpArray[iterator,(inDim*j)+i] = KpSpace[index]
                     numTemp.append([KpSpace[index]])
-                    tauArray[iterator,3-j] = taupSpace[index]
-                    denTemp.append([taupSpace[index],1.])
+                    tauArray[iterator,(inDim*j)+i] = taupSpace[index2]
+                    denTemp.append([taupSpace[index2],1.])
                 nums.append(numTemp)
                 dens.append(denTemp)
                 
@@ -293,19 +311,40 @@ class Signal:
             dens=np.array(dens)
             sys = control.tf(nums,dens)
             _,y,_ = control.forced_response(sys,U=np.transpose(u),T=t)
-            y = self.gauss_noise(y,stdev)
-
-                # Only plot every 100 input signals
-            if (iterator)<100:
+            y = np.transpose(self.gauss_noise(y,stdev))
+            yArray[iterator,:,:] = y
+             
+            # Only plot every 100 input signals
+            if (iterator)<self.numPlots:
                 plt.figure(dpi=100)
                 plt.plot(t[:200],u[:200],label='Input Signal')
-                for yDim in range(0,outDim):
-                    plt.plot(t[:200],y[yDim][:200], label='FOPTD Response')
+                plt.plot(t[:200],y[:200], label='FOPTD Response')
                 plt.legend()
                 plt.show()
                 
             # Subsequently update the iterator to move down row
             iterator+=1
+            
+        index = range(0,len(yArray))
+        if self.trainFrac!=1:  
+            train = random.sample(index,int(trainFrac*numTrials))
+            test = [item for item in list(index) if item not in train]
+        else:
+            train=index
+            test=[]
+        
+        # Make it so that any of these attributes can be accessed 
+        # without needing to return them all from the function
+        self.uArray = uArray
+        self.yArray = yArray
+        self.taus = tauArray
+        self.kps = KpArray
+        self.orderList = orderList
+        self.train = train
+        self.test = test
+        self.plot_parameter_space(tauArray,KpArray,train,test)
+        
+        return uArray,yArray,tauArray,KpArray,train,test
             
     # This function uses the training and testing indices produced during
     # simulate() to segregate the training and validation sets
@@ -315,13 +354,13 @@ class Signal:
         except:
             numDim=1
             
-        trainspace = xData[self.train,:]
-        valspace = xData[self.test,:] 
+        trainspace = xData[self.train]
+        valspace = xData[self.test] 
         
-        x_train= trainspace.reshape((int(self.numTrials*self.trainFrac),self.nstep,1))
-        y_train = np.array([yData[i] for i in self.train])
+        x_train= trainspace.reshape((int(self.numTrials*self.trainFrac),self.nstep,numDim))
+        y_train = np.array([yData[i,:] for i in self.train])
         
-        x_val = valspace.reshape((int(self.numTrials*(1-self.trainFrac)),self.nstep,1))
+        x_val = valspace.reshape((int(self.numTrials*(1-self.trainFrac)),self.nstep,numDim))
         y_val = np.array([yData[i] for i in self.test])
         
         return x_train,x_val,y_train,y_val,numDim
