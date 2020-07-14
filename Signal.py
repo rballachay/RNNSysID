@@ -95,7 +95,6 @@ class Signal:
     simulate_and_preprocess
         Function which produces data to be used directly in prediction. Cannot be 
         used if data is to be used in training.
-
     
     """
     
@@ -166,6 +165,8 @@ class Signal:
     # Generate gaussian noise with mean and standard deviation
     # of 5% of the maximum returned value. 
     def gauss_noise(self,array,stdev):
+        # If the array has 2 dimensions, this will capture it
+        # Otherwise, it will evaluate the length of 1D array
         try:
             length,width = np.shape(array)
             noise = np.random.normal(0,(stdev/100)*np.amax(array),(length,width))
@@ -174,8 +175,35 @@ class Signal:
             noise = np.random.normal(0,(stdev/100)*np.amax(array),(length,))
         return array+noise
     
-    # Function which simulates a signal and returns it in whichever 
-    def SISO_simulation(self,KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10],zetaRange=[0.1,1],stdev=5):
+    """
+    Module which produces simulation of SISO system given the input parameters. 
+    Contains a loop which iterates for the total number of samples and appends
+    to an array. 
+    
+    Uses pseudo-random binary signal with amplitude in [-1,1] and linear first 
+    order plus dead time system, modelled using transfer function class in
+    the Control package to simulate the linear system.
+    
+    Purpose is to produce simulated system responses with varying quantities 
+    of noise to simulate real linear system responses in order to train and
+    validate models built with the Model class.
+    
+    Parameters
+    ----------
+    KpRange : tuple, default=(1,10)
+        Possible range for gains. An equally spaced array between the maximum 
+        and minimum are chosen based on the number of simulations.
+    
+    tauRange : tuple, default=(1,10)
+        Possible range for time constant. An equally spaced array between the 
+        maximum and minimum are chosen based on the number of simulations.
+     
+    thetaRange : tuple, default=(1,10)
+        Possible range for time delays. An equally spaced array between the 
+        maximum and minimum are chosen based on the number of simulations.
+        
+    """
+    def SISO_simulation(self,KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10],stdev=5):
         # Access all the attributes from initialization
         numTrials=self.numTrials; nstep=self.nstep;
         timelength=self.timelength; trainFrac=self.trainFrac
@@ -189,36 +217,51 @@ class Signal:
         taupSpace = np.linspace(tauRange[0],tauRange[1],nstep)
         thetaSpace = np.arange(thetaRange[0],thetaRange[1])
         
+        # Zeros wouldn't be beneficial for solving the 
+        # system so don't use
         KpSpace[KpSpace==0] = 0.01
         taupSpace[taupSpace==0] = 0.01
         thetaSpace[thetaSpace==0] = 0.01
         
+        # Empty lists for filling with parameters
         taus = []
         thetas=[]
         kps=[]
-        iterator=0
         
+        # While loop which iterates over each of the parameter scenarios
+        iterator=0
         while(iterator<numTrials):
+            # Randomize each index so they aren't linearly dependent 
+            # on each other
             index = np.random.randint(0,nstep)
             index1 = np.random.randint(0,nstep)
             index2 = np.random.randint(0,9) 
             
+            # Select parameter using random index
             Kp = KpSpace[index]
             taup = taupSpace[index1]
             theta = thetaSpace[index2]
             
+            # Generate random signal using
             u = (self.PRBS())  
-            
             t = np.linspace(0,timelength,nstep)
+            
+            # Subtract time delay and get the 'simulated time' which has
+            # no physical significance. Fill the delay with zeros and
+            # start signal after delay is elapsed
             tsim = t - theta
             yindStart = next((i for i, x in enumerate(tsim) if x>0), None)
             tInclude = tsim[yindStart-1:]
             uInclude = u[yindStart-1:]
+            
+            # Use transfer function module from control to simulate 
+            # system response after delay then add to zeros
             sys = control.tf([Kp,] ,[taup,1.])
             _,yEnd,_ = control.forced_response(sys,U=uInclude,T=tInclude)
             yEnd = self.gauss_noise(yEnd,stdev)
             y = np.concatenate((np.zeros((len(t)-len(tInclude))),yEnd))
             
+            # Add simulation to array with all simulations
             uArray[iterator,:] = u
             yArray[iterator,:]= y
             taus.append(taup)
@@ -237,6 +280,9 @@ class Signal:
             # Subsequently update the iterator to move down row
             iterator+=1
         
+        # Randomly select train and test indices from sample data. 
+        # If the prediction module is used, trainFrac will default 
+        # to one and this portion will be skipped
         index = range(0,len(yArray))
         if self.trainFrac!=1:  
             train = random.sample(index,int(trainFrac*numTrials))
@@ -349,11 +395,15 @@ class Signal:
     # This function uses the training and testing indices produced during
     # simulate() to segregate the training and validation sets
     def preprocess(self,xData,yData):
+        # If array has more than 2 dimensions, use 
+        # axis=2 when reshaping, otherwise set to 1
         try:
             _,_,numDim= xData.shape
         except:
             numDim=1
-            
+           
+        # Select training and validation data based on training
+        # and testing indices set during simulation
         trainspace = xData[self.train]
         valspace = xData[self.test] 
         

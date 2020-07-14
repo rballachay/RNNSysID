@@ -18,7 +18,7 @@ trainFrac = .7
   
 start_time = time.time()
 sig = Signal(numTrials,nstep,timelength,trainFrac)
-sig.MIMO_simulation(stdev=0)
+sig.MIMO_simulation(stdev=5)
 a = sig.kps
 o = sig.uArray
 print("--- %s seconds ---" % (time.time() - start_time))
