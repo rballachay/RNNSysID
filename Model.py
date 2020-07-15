@@ -22,6 +22,7 @@ from scipy.integrate import odeint
 from Signal import Signal
 from tensorflow.keras import backend as K
 import datetime
+import control as control
 
 class MyThresholdCallback(tf.keras.callbacks.Callback):
     """
@@ -97,6 +98,25 @@ class Model:
                 modelList.append(keras.models.load_model(name, custom_objects=dependencies))
         
         for i in range(0,3):
+            self.modelDict[self.names[i]] = modelList[i]
+            
+    """
+    Loads one of two first order models: probability or regular. Iterates over
+    directory and loads alphabetically. If more than 3 models exist in the 
+    directory, it will load them indiscriminately. 
+    """
+    def load_MIMO(self):
+        modelList = []
+        loadDir = '/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/Integrated Models/MIMO/'
+            
+        for filename in os.listdir(loadDir):
+            if filename.endswith(".h5"):
+                name = loadDir +filename
+                print(name)
+                dependencies = {'coeff_determination': self.coeff_determination}
+                modelList.append(keras.models.load_model(name, custom_objects=dependencies))
+        
+        for i in range(0,2):
             self.modelDict[self.names[i]] = modelList[i]
 
     """
@@ -269,10 +289,10 @@ class Model:
             else:
                 yData[:a,:] = taus[:,:2]
                 yData[a:,:]  = taus[:,2:]
-                xData[:a,:,0] = yArray[:,:,0] * uArray[:,:,0]
-                xData[:a,:,1] = yArray[:,:,0] * uArray[:,:,1]
-                xData[a:,:,0] = yArray[:,:,1] * uArray[:,:,0]
-                xData[a:,:,1] = yArray[:,:,1] * uArray[:,:,1]
+                xData[:a,:,0] = yArray[:,:,0] - uArray[:,:,0]
+                xData[:a,:,1] = yArray[:,:,0] - uArray[:,:,1]
+                xData[a:,:,0] = yArray[:,:,1] - uArray[:,:,0]
+                xData[a:,:,1] = yArray[:,:,1] - uArray[:,:,1]
             
             x_train,x_val,y_train,y_val,numDim = sig.preprocess(xData,yData)
             
@@ -283,12 +303,15 @@ class Model:
             
             # Set threshold to stop training when coefficient of determination
             # gets to 0.9. 
-            MTC = MyThresholdCallback(0.95)
+            if parameter=='kp':
+                MTC = MyThresholdCallback(0.97)
+            else:
+                MTC = MyThresholdCallback(0.92)
             print("Fit model on training data")
             history = model.fit(
                 x_train,
                 y_train,
-                batch_size=64,
+                batch_size=16,
                 epochs=epochs,
                 # We pass some validation for
                 # monitoring validation loss and metrics
@@ -299,7 +322,7 @@ class Model:
             
             modelList.append(model)
             self.modelDict[self.names[k]] = model
-            predictions = modelList[k].predict(x_val)
+            predictions = model.predict(x_val)
             
             # Only save model if true
             if saveModel:
@@ -383,18 +406,32 @@ class Model:
         yArrays = sig.yArray[sig.train,:]
         
         for (i,index) in enumerate(sig.train):
-            taup = self.tauPredictions[i]
-            Kp = self.kpPredictions[i]
-            theta = self.thetaPredictions[i]
+            taup = self.tauPredictions[i][0]
+            Kp = self.kpPredictions[i][0]
+            theta = self.thetaPredictions[i][0]
             
             if self.Modeltype=='probability':
                 Kperror=self.kpError[i]
                 tauperror=self.tauError[i]
                 thetaerror=self.thetaError[i]
                 
-            t = np.linspace(0,sig.timelength,self.nstep)
-            u = uArrays[i,:]
-            yPred = (odeint(sig.FOmodel,0,t,args=(t,u,Kp,taup,theta),hmax=1.).ravel())
+            # Generate random signal using
+            u = uArrays[i,:] 
+            t = np.linspace(0,sig.timelength,sig.nstep)
+            
+            # Subtract time delay and get the 'simulated time' which has
+            # no physical significance. Fill the delay with zeros and
+            # start signal after delay is elapsed
+            tsim = t - theta
+            yindStart = next((i for i, x in enumerate(tsim) if x>0), None)
+            tInclude = tsim[yindStart-1:]
+            uInclude = u[yindStart-1:]
+            
+            # Use transfer function module from control to simulate 
+            # system response after delay then add to zeros
+            sys = control.tf([Kp,] ,[taup,1.])
+            _,yEnd,_ = control.forced_response(sys,U=uInclude,T=tInclude)
+            yPred = np.concatenate((np.zeros((len(t)-len(tInclude))),yEnd))
             yTrue = yArrays[i,:]
             self.errors.append(self.MSE(yPred,yTrue))
             
@@ -421,37 +458,68 @@ class Model:
             print("You need to predict with an instance of signal!")
             return
         
-        prob = Probability(maxError=sig.stdev)
-        Kperror,tauperror,thetaerror = prob.get_errors()
-    
-        self.kpPredictions = self.modelDict['kp'].predict(sig.xData['kp'])
-        self.tauPredictions = self.modelDict['tau'].predict(sig.xData['tau'])
-        self.thetaPredictions = self.modelDict['theta'].predict(sig.xData['theta'])
-            
-        self.errors = []
-        uArrays = sig.uArray[sig.train,:,:]
-        yArrays = sig.yArray[sig.train,:,:]
+        #prob = Probability(maxError=sig.stdev)
+        #Kperror,tauperror,thetaerror = prob.get_errors()
         
-        for (i,index) in enumerate(sig.train):
-            taup = self.tauPredictions[i]
-            Kp = self.kpPredictions[i]
-            theta = self.thetaPredictions[i]
+        kpPred = np.split(self.modelDict['kp'].predict(sig.xData['kp']),2,axis=0)
+        tauPred = np.split(self.modelDict['tau'].predict(sig.xData['tau']),2,axis=0)
+            
+        self.kpPredictions = np.concatenate(kpPred,axis=1)
+        self.tauPredictions = np.concatenate(tauPred,axis=1)
+        
+        print(self.tauPredictions)
+        print(np.concatenate(np.split(np.array(sig.yData['tau']),2,axis=0),axis=1))
+        
+        self.errors = []
+        uArrays = sig.uArray
+        yArrays = sig.yArray
+        
+        for (k,index) in enumerate(sig.train):
+            index = int(np.floor(index/2))
+            k = int(np.floor(k/2))
+            
+            taup = self.tauPredictions[k]
+            Kp = self.kpPredictions[k]
             
             t = np.linspace(0,sig.timelength,self.nstep)
-            u = uArrays[i,:]
-            yPred = (odeint(sig.FOmodel,0,t,args=(t,u,Kp,taup,theta),hmax=1.).ravel())
-            yTrue = yArrays[i,:]
+            u = uArrays[k,:,:]
+            
+            nums = []
+            dens = []
+            
+            # The transfer function from the 2nd input to the 1st output is
+            # (3s + 4) / (6s^2 + 5s + 4).
+            # num = [[[1., 2.], [3., 4.]], [[5., 6.], [7., 8.]]]
+            for j in range(0,2):
+                numTemp = []
+                denTemp = []
+                for i in range(0,2):
+                    numTemp.append([Kp[(2*j)+i]])
+                    denTemp.append([taup[(2*j)+i],1.])
+                nums.append(numTemp)
+                dens.append(denTemp)
+                
+            nums=np.array(nums)
+            dens=np.array(dens)
+            sys = control.tf(nums,dens)
+            _,yPred,_ = control.forced_response(sys,U=np.transpose(u),T=t)
+            
+            yPred = np.transpose(yPred)
+            yTrue = yArrays[k,:,:]
             self.errors.append(self.MSE(yPred,yTrue))
             
             if plotPredict:
                 plt.figure(dpi=100)
-                plt.plot(t,u,label='Input Signal')
+                plt.plot(t,u)
                 
-                s1 = ("Modelled: Kp:%.1f τ:%.1f θ:%.1f  %i%% Noise" % (sig.kps[i],sig.taus[i],sig.thetas[i],sig.stdev))
-                s2 = ("Predicted: Kp:%.1f (%.1f) τ:%.1f (%.1f) θ:%.1f (%.1f)" % (Kp,Kperror,taup,tauperror,theta,thetaerror))
+                s1 = ("Predicted: Kp:%.1f, %.1f, %.1f, %.1f τ:%.1f, %.1f, %.1f, %.1f  %i%% Noise" % (Kp[0],Kp[1],Kp[2],Kp[3],taup[0],taup[1],taup[2],taup[3],sig.stdev))
+                s2 = ("Modelled: Kp:%.1f, %.1f, %.1f, %.1f τ:%.1f, %.1f, %.1f, %.1f" % (sig.kps[k,0],sig.kps[k,1],sig.kps[k,2],
+                                                                                         sig.kps[k,3],sig.taus[k,0],sig.taus[k,1],sig.taus[k,2],sig.taus[k,3]))
 
-                plt.plot(t,yTrue, label=s1)
-                plt.plot(t,yPred,'--', label=s2)
+                plt.plot(t,yTrue[:,0],'r',label=s2)
+                plt.plot(t,yPred[:,0],'k--',label=s1)
+                plt.plot(t,yTrue[:,1],'b')
+                plt.plot(t,yTrue[:,1],'g--')
                 plt.xlabel("Time (s)")
                 plt.ylabel("Change from set point")
                 
@@ -480,7 +548,7 @@ class Model:
     def __MIMO_kp(self):
         model = keras.Sequential()
         # I tried almost every permuation of LSTM architecture and couldn't get it to work
-        model.add(layers.GRU(100, activation='tanh',input_shape=(self.nstep,2)))
+        model.add(layers.GRU(400, activation='tanh',input_shape=(self.nstep,2)))
         model.add(layers.Dense(100, activation='linear',))
         model.add(layers.Dense(100, activation='linear',))
         model.add(layers.Dense(2, activation='linear'))
@@ -491,9 +559,9 @@ class Model:
     def __MIMO_tau(self):
         model = keras.Sequential()
         # I tried almost every permuation of LSTM architecture and couldn't get it to work
-        model.add(layers.GRU(100, activation='tanh',input_shape=(self.nstep,2)))
-        model.add(layers.Dense(300, activation='linear',))
-        model.add(layers.Dense(300, activation='linear',))
+        model.add(layers.GRU(400, activation='tanh',input_shape=(self.nstep,2)))
+        model.add(layers.Dense(400, activation='linear',))
+        model.add(layers.Dense(400, activation='linear',))
         model.add(layers.Dense(2, activation='linear'))
         # Compile the model
         model.compile(optimizer='adam', loss='mean_squared_error',metrics=[self.coeff_determination])

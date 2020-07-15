@@ -330,25 +330,24 @@ class Signal:
                 u = np.stack((u,prbs),axis=1)
             
             uArray[iterator,:,:] = u
-            
             nums = []
             dens = []
             
             # The transfer function from the 2nd input to the 1st output is
             # (3s + 4) / (6s^2 + 5s + 4).
             # num = [[[1., 2.], [3., 4.]], [[5., 6.], [7., 8.]]]
-            for j in range(0,outDim):
+            for j in range(0,2):
                 numTemp = []
                 denTemp = []
-                for i in range(0,inDim):
+                for i in range(0,2):
                     if len(orderList)<(outDim*inDim):
                         string = "Input # " + str(i+1) + " Output # " + str(j+1)
                         orderList.append(string)
                     index = np.random.randint(0,nstep)
                     index2 = np.random.randint(0,nstep)
-                    KpArray[iterator,(inDim*j)+i] = KpSpace[index]
+                    KpArray[iterator,(2*j)+i] = KpSpace[index]
                     numTemp.append([KpSpace[index]])
-                    tauArray[iterator,(inDim*j)+i] = taupSpace[index2]
+                    tauArray[iterator,(2*j)+i] = taupSpace[index2]
                     denTemp.append([taupSpace[index2],1.])
                 nums.append(numTemp)
                 dens.append(denTemp)
@@ -376,7 +375,7 @@ class Signal:
             train = random.sample(index,int(trainFrac*numTrials))
             test = [item for item in list(index) if item not in train]
         else:
-            train=index
+            train=range(0,len(yArray))
             test=[]
         
         # Make it so that any of these attributes can be accessed 
@@ -411,18 +410,19 @@ class Signal:
         y_train = np.array([yData[i,:] for i in self.train])
         
         x_val = valspace.reshape((int(self.numTrials*(1-self.trainFrac)),self.nstep,numDim))
-        y_val = np.array([yData[i] for i in self.test])
+        y_val = np.array([yData[i,:] for i in self.test])
         
         return x_train,x_val,y_train,y_val,numDim
+    
     
     # This function makes it easier to run a bunch of simulations and 
     # automatically return the validation and testing sets without 
     # calling each function separately. 
-    def simulate_and_preprocess(self):
+    def SISO_validation(self):
         # Since no training is occurring, can skip separation of testing and validation sets
         self.trainFrac = 1
         
-        uArray,yArray,corrArray,conArray,taus,kps,thetas,train,test = self.training_simulation(stdev=self.stdev)
+        uArray,yArray,taus,kps,thetas,train,test = self.SISO_simulation(stdev=self.stdev)
         xDatas = [yArray,yArray,(yArray-np.mean(yArray))/np.std(yArray) - uArray]
         yDatas = [taus, kps, thetas]
         
@@ -436,3 +436,45 @@ class Signal:
             self.yData[name] = y
         
         return self.xData,self.yData
+    
+    # This function makes it easier to run a bunch of simulations and 
+    # automatically return the validation and testing sets without 
+    # calling each function separately. 
+    def MIMO_validation(self):
+        # Since no training is occurring, can skip separation of testing and validation sets
+        self.trainFrac = 1
+        
+        uArray,yArray,taus,kps,train,test = self.MIMO_simulation(stdev=self.stdev)
+        a,b,c = np.shape(uArray)
+        
+        self.xData ={};
+        self.yData={}
+        self.names = ["kp","tau"]
+        
+        for (i,name) in enumerate(self.names):
+            xDatas = np.full((a*2,b,c),0.)
+            yDatas = np.full((a*2,2),0.)
+            
+            # Develop separate model for each output variable
+            if name=='kp':
+                yDatas[:a,:] = kps[:,:2]
+                yDatas[a:,:]  = kps[:,2:]
+                xDatas[:a,:,0] = uArray[:,:,0]*yArray[:,:,0]
+                xDatas[:a,:,1] = uArray[:,:,1]*yArray[:,:,0]
+                xDatas[a:,:,0] = uArray[:,:,0]*yArray[:,:,1]
+                xDatas[a:,:,1] = uArray[:,:,1]*yArray[:,:,1]  
+            else:
+                yDatas[:a,:] = taus[:,:2]
+                yDatas[a:,:]  = taus[:,2:]
+                xDatas[:a,:,0] = yArray[:,:,0] - uArray[:,:,0]
+                xDatas[:a,:,1] = yArray[:,:,0] - uArray[:,:,1]
+                xDatas[a:,:,0] = yArray[:,:,1] - uArray[:,:,0]
+                xDatas[a:,:,1] = yArray[:,:,1] - uArray[:,:,1]
+            
+            print(np.shape(xDatas))
+            x,y=xDatas,yDatas
+            self.xData[name] = x
+            self.yData[name] = y
+        
+        return self.xData,self.yData       
+        
