@@ -19,6 +19,7 @@ tfb = tfp.bijectors
 from sklearn.metrics import r2_score
 import matplotlib.pyplot as plt
 from scipy.integrate import odeint
+import sklearn
 from Signal import Signal
 from tensorflow.keras import backend as K
 import datetime
@@ -274,26 +275,8 @@ class Model:
         
         # Iterate over tau and kp parameters
         for (k,parameter) in enumerate(parameters):
-            a,b,c = np.shape(uArray)
-            xData = np.full((a*sig.outDim,b,c),0.)
-            yData = np.full((a*sig.outDim,sig.inDim),0.)
             
-            # Develop separate model for each output variable
-            if parameter=='kp':
-                yData[:a,:] = kps[:,:2]
-                yData[a:,:]  = kps[:,2:]
-                xData[:a,:,0] = uArray[:,:,0]*yArray[:,:,0]
-                xData[:a,:,1] = uArray[:,:,1]*yArray[:,:,0]
-                xData[a:,:,0] = uArray[:,:,0]*yArray[:,:,1]
-                xData[a:,:,1] = uArray[:,:,1]*yArray[:,:,1]    
-            else:
-                yData[:a,:] = taus[:,:2]
-                yData[a:,:]  = taus[:,2:]
-                xData[:a,:,0] = yArray[:,:,0] - uArray[:,:,0]
-                xData[:a,:,1] = yArray[:,:,0] - uArray[:,:,1]
-                xData[a:,:,0] = yArray[:,:,1] - uArray[:,:,0]
-                xData[a:,:,1] = yArray[:,:,1] - uArray[:,:,1]
-            
+            xData,yData = sig.stretch_MIMO(parameter)
             x_train,x_val,y_train,y_val,numDim = sig.preprocess(xData,yData)
             
             if parameter=='kp':
@@ -377,7 +360,7 @@ class Model:
         mse = sum((y_true-y_pred)**2)
         return mse
 
-    def predict_SISO(self,sig,plotPredict=True,savePredict=False):
+    def predict_SISO(self,sig,plotPredict=True,savePredict=False,probabilityCall=False):
         if not(isinstance(sig,Signal)):
             print("You need to predict with an instance of signal!")
             return
@@ -394,8 +377,9 @@ class Model:
             self.thetaError = self.modelDict['theta'](sig.xData['theta']).stddev()           
             
         else:
-            prob = Probability(maxError=sig.stdev)
-            Kperror,tauperror,thetaerror = prob.get_errors()
+            if not(probabilityCall):
+                prob = Probability(sig)
+                Kperror,tauperror,thetaerror = prob.get_errors()
         
             self.kpPredictions = self.modelDict['kp'].predict(sig.xData['kp'])
             self.tauPredictions = self.modelDict['tau'].predict(sig.xData['tau'])
@@ -450,25 +434,23 @@ class Model:
                 plt.legend()
            
             if savePredict:
-                savePath = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Predictions/" + str(i) + ".png"
+                savePath = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Predictions/SISO/" + str(i) + ".png"
                 plt.savefig(savePath)
     
-    def predict_MIMO(self,sig,plotPredict=True,savePredict=False):
+    def predict_MIMO(self,sig,plotPredict=True,savePredict=False,probabilityCall=False):
         if not(isinstance(sig,Signal)):
             print("You need to predict with an instance of signal!")
             return
         
-        #prob = Probability(maxError=sig.stdev)
-        #Kperror,tauperror,thetaerror = prob.get_errors()
+        if not(probabilityCall):
+            prob = Probability(sig)
+            #Kperror,tauperror,thetaerror = prob.get_errors()
         
         kpPred = np.split(self.modelDict['kp'].predict(sig.xData['kp']),2,axis=0)
         tauPred = np.split(self.modelDict['tau'].predict(sig.xData['tau']),2,axis=0)
             
         self.kpPredictions = np.concatenate(kpPred,axis=1)
         self.tauPredictions = np.concatenate(tauPred,axis=1)
-        
-        print(self.tauPredictions)
-        print(np.concatenate(np.split(np.array(sig.yData['tau']),2,axis=0),axis=1))
         
         self.errors = []
         uArrays = sig.uArray
@@ -506,27 +488,25 @@ class Model:
             
             yPred = np.transpose(yPred)
             yTrue = yArrays[k,:,:]
-            self.errors.append(self.MSE(yPred,yTrue))
             
+            meanerror = np.mean(self.MSE(yPred,yTrue))
+            self.errors.append(meanerror)
+
             if plotPredict:
                 plt.figure(dpi=100)
                 plt.plot(t,u)
-                
                 s1 = ("Predicted: Kp:%.1f, %.1f, %.1f, %.1f τ:%.1f, %.1f, %.1f, %.1f  %i%% Noise" % (Kp[0],Kp[1],Kp[2],Kp[3],taup[0],taup[1],taup[2],taup[3],sig.stdev))
-                s2 = ("Modelled: Kp:%.1f, %.1f, %.1f, %.1f τ:%.1f, %.1f, %.1f, %.1f" % (sig.kps[k,0],sig.kps[k,1],sig.kps[k,2],
-                                                                                         sig.kps[k,3],sig.taus[k,0],sig.taus[k,1],sig.taus[k,2],sig.taus[k,3]))
-
+                s2 = ("Modelled: Kp:%.1f, %.1f, %.1f, %.1f τ:%.1f, %.1f, %.1f, %.1f" % (sig.kps[k,0],sig.kps[k,1],sig.kps[k,2],sig.kps[k,3],sig.taus[k,0],sig.taus[k,1],sig.taus[k,2],sig.taus[k,3]))
                 plt.plot(t,yTrue[:,0],'r',label=s2)
                 plt.plot(t,yPred[:,0],'k--',label=s1)
                 plt.plot(t,yTrue[:,1],'b')
                 plt.plot(t,yTrue[:,1],'g--')
                 plt.xlabel("Time (s)")
                 plt.ylabel("Change from set point")
-                
                 plt.legend()
            
             if savePredict:
-                savePath = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Predictions/" + str(i) + ".png"
+                savePath = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Predictions/MIMO/" + str(k) + ".png"
                 plt.savefig(savePath)
                 
     def coeff_determination(self,y_true, y_pred):
@@ -601,29 +581,43 @@ class Model:
 
 class Probability:
     
-    def __init__(self,maxError=5,numTrials=1000,plotUncertainty=True):
+    def __init__(self,sig=False,maxError=5,numTrials=1000,plotUncertainty=True):
         self.plotUncertainty = plotUncertainty
         self.maxError = int(maxError)
         self.deviations = np.arange(0,maxError)
         self.numTrials = numTrials
-        self.nstep = 100
-        self.timelength = 100
-        self.trainFrac = 0.7
+        if not(sig):
+            self.maxError = int(maxError)
+            self.nstep = 100
+            self.timelength = 100
+            self.trainFrac = 0.7
+            self.type = "SISO"
+        else:
+            self.maxError = sig.stdev
+            self.nstep = sig.nstep
+            self.timelength = sig.timelength
+            self.trainFrac = sig.trainFrac
+            self.type = sig.type
+            
         if (maxError==5 and numTrials==1000):
             suffix = "Default"
         else:
             suffix = 'error_' + str(maxError) + '_nTrials_' + str(numTrials)
-        self.errorCSV = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Uncertainty/propData"+suffix+".csv"
-        self.produce_simulation()
+        if self.type=="SISO":
+            self.errorCSV = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Uncertainty/SISO/Data/propData"+suffix+".csv"
+            self.SISO_probability_estimate()
+        else:
+            self.errorCSV = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Uncertainty/MIMO/Data/propData"+suffix+".csv"
+            self.MIMO_probability_estimate()
         
-    def produce_simulation(self):    
+    def SISO_probability_estimate(self):    
         
         if not(path.exists(self.errorCSV)):
             print("No simulation for these parameters exists in Uncertainty data. Proceeding with simulation")
            
             # Initialize the models that are saved using the parameters declared above
             predictor = Model(self.nstep)
-            predictor.load_FOPTD()
+            predictor.load_SISO()
                 
             deviations = np.arange(0,self.maxError)
             
@@ -642,15 +636,15 @@ class Probability:
                 timelength = self.timelength; trainFrac = self.trainFrac
                 # then simulates using the initialized model
                 sig = Signal(numTrials,nstep,timelength,trainFrac,stdev=deviation)
-                sig.training_simulation(KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10])
+                sig.SISO_simulation(KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10])
                 
                 # In this case, since we are only loading the model, not trying to train it,
                 # we can use function simulate and preprocess
-                xData,yData = sig.simulate_and_preprocess()
+                xData,yData = sig.SISO_validation()
             
                 # Function to make predictions based off the simulation 
-                predictor.predict(sig,savePredict=False,plotPredict=False)
-            
+                predictor.predict_SISO(sig,savePredict=False,plotPredict=False)
+                
                 error = np.concatenate((predictor.errors,error))
                 kp_pred = np.concatenate((predictor.kpPredictions[:,0],kp_pred))
                 theta_pred = np.concatenate((predictor.thetaPredictions[:,0],theta_pred))
@@ -683,26 +677,122 @@ class Probability:
                 sd.drop(sd.tail(1).index,inplace=True)
             
         self.errorDict = {}  
-        
+        pathPrefix = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Uncertainty/SISO/Plots/"
         prefixes = ['kp','tau','theta']
-        for prefix in prefixes:
+        for (i,prefix) in enumerate(prefixes):
             sd[prefix+'Error'] = (sd[prefix+'Pred']-sd[prefix+'True'])
             h = np.std(sd[prefix+'Error'])
             self.errorDict[prefix] = h
             
             if self.plotUncertainty:
                 plt.figure(dpi=200)
-                plt.hist(sd[prefix+'Error'],bins=100)
+                plt.hist(sd[prefix+'Error'],bins=100,label='Max Error = %i%%' % self.maxError)
                 plt.xlabel('Standard Error in '+ prefix)
                 plt.ylabel("Frequency Distribution")
+                plt.legend()
+                savePath = pathPrefix + "histogram_" + prefix + ".png"
+                plt.savefig(savePath)
                 
                 plt.figure(dpi=200)
-                plt.plot(sd[prefix+'True'],sd[prefix+'Pred'],'.')
-                plt.plot(np.linspace(1,10),np.linspace(1,10),'r--')
-                plt.plot(np.linspace(1,10),np.linspace(1,10)+h,'g--')
+                plt.plot(sd[prefix+'True'],sd[prefix+'Pred'],'.',label='Max Error = %i%%' % self.maxError)
+                plt.plot(np.linspace(1,10),np.linspace(1,10),'r--',label="r\u00b2 = %.3f" % r2_score(sd[prefix+'True'],sd[prefix+'Pred']))
+                plt.plot(np.linspace(1,10),np.linspace(1,10)+h,'g--',label="Stdev = %.3f" % h)
                 plt.plot(np.linspace(1,10),np.linspace(1,10)-h,'g--')
                 plt.ylabel("Predicted Value of "+prefix)
                 plt.xlabel("True Value of "+prefix)
-    
+                plt.legend()
+                savePath = pathPrefix + "determination_" + prefix + ".png"
+                plt.savefig(savePath)
+                
+    def MIMO_probability_estimate(self):    
+        
+        if not(path.exists(self.errorCSV)):
+            print("No simulation for these parameters exists in Uncertainty data. Proceeding with simulation")
+           
+            # Initialize the models that are saved using the parameters declared above
+            predictor = Model(self.nstep)
+            predictor.load_MIMO()
+                
+            deviations = np.arange(0,self.maxError)
+            
+            stdev = np.array([0])
+            error=np.array([0])
+            kp_pred = np.array([0])
+            tau_pred = np.array([0])
+            
+            kp_true = np.array([0])
+            tau_true = np.array([0])
+            
+            for deviation in deviations:
+                numTrials = self.numTrials; nstep = self.nstep
+                timelength = self.timelength; trainFrac = self.trainFrac
+                # then simulates using the initialized model
+                sig = Signal(numTrials,nstep,timelength,trainFrac,stdev=deviation)
+                sig.MIMO_simulation(KpRange=[1,10],tauRange=[1,10])
+                
+                # In this case, since we are only loading the model, not trying to train it,
+                # we can use function simulate and preprocess
+                xData,yData = sig.MIMO_validation()
+            
+                # Function to make predictions based off the simulation 
+                predictor.predict_MIMO(sig,savePredict=False,plotPredict=False,probabilityCall=True)
+                
+                error = np.concatenate((predictor.errors,error))
+                kp_pred = np.concatenate((predictor.kpPredictions.ravel(),kp_pred))
+                tau_pred = np.concatenate((predictor.tauPredictions.ravel(),tau_pred))
+                
+                kp_true = np.concatenate((sig.kps.ravel(),kp_true))
+                tau_true = np.concatenate((sig.taus.ravel(),tau_true))
+                stdev = np.concatenate((np.full_like(predictor.errors,deviation),stdev))
+            
+            sd = pd.DataFrame()
+            sd['kpPred'] = kp_pred
+            sd['tauPred'] = tau_pred
+            sd['kpTrue'] = kp_true
+            sd['tauTrue'] = tau_true
+            
+            sd.to_csv(self.errorCSV, index=False)
+            
+        else:
+            print("Data exists for the parameters, proceeding to producing uncertainty estimate")
+            try:
+                sd = pd.read_csv(self.errorCSV).drop(['Unnamed: 0'],axis=1)
+                sd.drop(sd.tail(1).index,inplace=True)
+                
+            except:
+                sd = pd.read_csv(self.errorCSV)
+                sd.drop(sd.tail(1).index,inplace=True)
+            
+        self.errorDict = {}  
+        pathPrefix = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Uncertainty/MIMO/Plots/"
+        prefixes = ['kp','tau']
+        for (i,prefix) in enumerate(prefixes):
+            sd[prefix+'Error'] = (sd[prefix+'Pred']-sd[prefix+'True'])
+            h = np.std(sd[prefix+'Error'])
+            self.errorDict[prefix] = h
+            
+            if self.plotUncertainty:
+                plt.figure(dpi=200)
+                plt.hist(sd[prefix+'Error'],bins=100,label='Max Error = %i%%' % self.maxError)
+                plt.xlabel('Standard Error in '+ prefix)
+                plt.ylabel("Frequency Distribution")
+                plt.legend()
+                savePath = pathPrefix + "histogram_" + prefix + ".png"
+                plt.savefig(savePath)
+                
+                plt.figure(dpi=200)
+                plt.plot(sd[prefix+'True'],sd[prefix+'Pred'],'.',label='Max Error = %i%%' % self.maxError)
+                plt.plot(np.linspace(1,10),np.linspace(1,10),'r--',label="r\u00b2 = %.3f" % r2_score(sd[prefix+'True'],sd[prefix+'Pred']))
+                plt.plot(np.linspace(1,10),np.linspace(1,10)+h,'g--',label="Stdev = %.3f" % h)
+                plt.plot(np.linspace(1,10),np.linspace(1,10)-h,'g--')
+                plt.ylabel("Predicted Value of "+prefix)
+                plt.xlabel("True Value of "+prefix)
+                plt.legend()
+                savePath = pathPrefix + "determination_" + prefix + ".png"
+                plt.savefig(savePath)
+                
+                
     def get_errors(self):
         return self.errorDict.values()
+    
+    

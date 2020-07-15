@@ -19,8 +19,8 @@ trainFrac = .7
 start_time = time.time()
 
 sig = Signal(numTrials,nstep,timelength,trainFrac,stdev=5)
-"""
 
+"""
 sig.MIMO_simulation()
 print("--- %s seconds ---" % (time.time() - start_time))
 
@@ -41,6 +41,6 @@ predictor = Model(nstep)
 predictor.load_MIMO()
 
 # Function to make predictions based off the simulation 
-i = predictor.predict_MIMO(sig,savePredict=False)
+i = predictor.predict_MIMO(sig,savePredict=True)
 
 print("--- %s seconds ---" % (time.time() - start_time))

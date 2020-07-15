@@ -208,6 +208,9 @@ class Signal:
         numTrials=self.numTrials; nstep=self.nstep;
         timelength=self.timelength; trainFrac=self.trainFrac
         
+        # Set the type of the simulation to inform the data split
+        self.type = "SISO"
+        
         # Initialize the arrays which will store the simulation data
         uArray = np.full((numTrials,nstep),0.)
         yArray = np.full((numTrials,nstep),0.)
@@ -310,6 +313,9 @@ class Signal:
         timelength=self.timelength; trainFrac=self.trainFrac
         self.inDim = inDim; self.outDim = outDim
         
+        # Set the type of the simulation to inform the data split
+        self.type = "MIMO"
+        
         # Initialize the arrays which will store the simulation data
         uArray = np.full((numTrials,nstep,inDim),0.)
         yArray = np.full((numTrials,nstep,outDim),0.)
@@ -406,12 +412,16 @@ class Signal:
         trainspace = xData[self.train]
         valspace = xData[self.test] 
         
-        x_train= trainspace.reshape((int(self.numTrials*self.trainFrac),self.nstep,numDim))
-        y_train = np.array([yData[i,:] for i in self.train])
-        
+        x_train= trainspace.reshape((int(self.numTrials*self.trainFrac),self.nstep,numDim))    
         x_val = valspace.reshape((int(self.numTrials*(1-self.trainFrac)),self.nstep,numDim))
-        y_val = np.array([yData[i,:] for i in self.test])
         
+        if self.type=="MIMO":
+            y_val = np.array([yData[i,:] for i in self.test])
+            y_train = np.array([yData[i,:] for i in self.train])
+        else:
+            y_val = [yData[i] for i in self.test]
+            y_train = [yData[i] for i in self.train]
+            
         return x_train,x_val,y_train,y_val,numDim
     
     
@@ -437,6 +447,30 @@ class Signal:
         
         return self.xData,self.yData
     
+    
+    def stretch_MIMO(self,name):
+        kps=self.kps; taus=self.taus
+        uArray=self.uArray; yArray=self.yArray
+        a,b,c = np.shape(self.uArray)
+        self.xDataMat = np.full((a*2,b,c),0.)
+        self.yDataMat = np.full((a*2,2),0.)
+        if name=='kp':
+            self.yDataMat[:a,:] = kps[:,:2]
+            self.yDataMat[a:,:]  = kps[:,2:]
+            self.xDataMat[:a,:,0] = uArray[:,:,0]*yArray[:,:,0]
+            self.xDataMat[:a,:,1] = uArray[:,:,1]*yArray[:,:,0]
+            self.xDataMat[a:,:,0] = uArray[:,:,0]*yArray[:,:,1]
+            self.xDataMat[a:,:,1] = uArray[:,:,1]*yArray[:,:,1]  
+        else:
+            self.yDataMat[:a,:] = taus[:,:2]
+            self.yDataMat[a:,:]  = taus[:,2:]
+            self.xDataMat[:a,:,0] = yArray[:,:,0] - uArray[:,:,0]
+            self.xDataMat[:a,:,1] = yArray[:,:,0] - uArray[:,:,1]
+            self.xDataMat[a:,:,0] = yArray[:,:,1] - uArray[:,:,0]
+            self.xDataMat[a:,:,1] = yArray[:,:,1] - uArray[:,:,1]
+        
+        return self.xDataMat,self.yDataMat
+    
     # This function makes it easier to run a bunch of simulations and 
     # automatically return the validation and testing sets without 
     # calling each function separately. 
@@ -452,27 +486,9 @@ class Signal:
         self.names = ["kp","tau"]
         
         for (i,name) in enumerate(self.names):
-            xDatas = np.full((a*2,b,c),0.)
-            yDatas = np.full((a*2,2),0.)
-            
             # Develop separate model for each output variable
-            if name=='kp':
-                yDatas[:a,:] = kps[:,:2]
-                yDatas[a:,:]  = kps[:,2:]
-                xDatas[:a,:,0] = uArray[:,:,0]*yArray[:,:,0]
-                xDatas[:a,:,1] = uArray[:,:,1]*yArray[:,:,0]
-                xDatas[a:,:,0] = uArray[:,:,0]*yArray[:,:,1]
-                xDatas[a:,:,1] = uArray[:,:,1]*yArray[:,:,1]  
-            else:
-                yDatas[:a,:] = taus[:,:2]
-                yDatas[a:,:]  = taus[:,2:]
-                xDatas[:a,:,0] = yArray[:,:,0] - uArray[:,:,0]
-                xDatas[:a,:,1] = yArray[:,:,0] - uArray[:,:,1]
-                xDatas[a:,:,0] = yArray[:,:,1] - uArray[:,:,0]
-                xDatas[a:,:,1] = yArray[:,:,1] - uArray[:,:,1]
+            x,y = self.stretch_MIMO(name)
             
-            print(np.shape(xDatas))
-            x,y=xDatas,yDatas
             self.xData[name] = x
             self.yData[name] = y
         
