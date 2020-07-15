@@ -18,7 +18,7 @@ trainFrac = .7
   
 start_time = time.time()
 
-sig = Signal(numTrials,nstep,timelength,trainFrac,stdev=5)
+sig = Signal(numTrials,nstep,timelength,trainFrac,stdev=2)
 
 """
 sig.MIMO_simulation()

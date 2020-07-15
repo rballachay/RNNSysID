@@ -307,6 +307,41 @@ class Signal:
         
         return uArray,yArray,taus,kps,thetas,train,test
     
+    """
+    Module which produces simulation of MIMO system given the input parameters. 
+    Contains a loop which iterates for the total number of samples and appends
+    to an array. 
+    
+    Uses pseudo-random binary signal with amplitude in [-1,1] and linear first 
+    order plus dead time system, modelled using transfer function class in
+    the Control package to simulate the linear system.
+    
+    Purpose is to produce simulated system responses with varying quantities 
+    of noise to simulate real linear system responses in order to train and
+    validate models built with the Model class.
+    
+    Parameters
+    ----------
+    inDim : int, default=2 
+        Number of input variables to MIMO system. Currently only set up
+        to handle MIMO system with 2 inputs and 2 outputs.
+        
+    outDim : int, default=2
+        Number of output variables from MIMO system. Currently only 
+        configured to handle MIMO with 2 inputs and 2 outputs.
+    
+    stdev : float, default=5.
+        Standard deviation of gaussian error added to the simulated system.
+        
+    KpRange : tuple, default=(1,10)
+        Possible range for gains. An equally spaced array between the maximum 
+        and minimum are chosen based on the number of simulations.
+    
+    tauRange : tuple, default=(1,10)
+        Possible range for time constant. An equally spaced array between the 
+        maximum and minimum are chosen based on the number of simulations.
+        
+    """
     def MIMO_simulation(self,stdev=5,inDim=2,outDim=2,KpRange=[1,10],tauRange=[1,10]):
         # Access all the attributes from initialization
         numTrials=self.numTrials; nstep=self.nstep;
@@ -328,11 +363,16 @@ class Signal:
         taupSpace = np.linspace(tauRange[0],tauRange[1],nstep)
         t = np.linspace(0,timelength,nstep)
         
+        # Iterate over each of the simulations and add
+        # to simulation arrays
         iterator=0
         while(iterator<numTrials):
-            u = self.PRBS()
+            u = self.PRBS(prob_switch=0.05)
+            
+            # Run a new PRBS for each input
+            # variable and stack in input
             for i in range(1,inDim):
-                prbs = self.PRBS()
+                prbs = self.PRBS(prob_switch=0.05)
                 u = np.stack((u,prbs),axis=1)
             
             uArray[iterator,:,:] = u
@@ -342,10 +382,14 @@ class Signal:
             # The transfer function from the 2nd input to the 1st output is
             # (3s + 4) / (6s^2 + 5s + 4).
             # num = [[[1., 2.], [3., 4.]], [[5., 6.], [7., 8.]]]
-            for j in range(0,2):
+            # Iterate over each of the output dimensions and
+            # add to numerator 
+            for j in range(0,self.outDim):
                 numTemp = []
                 denTemp = []
-                for i in range(0,2):
+                # Iterate over each of the input dimensions
+                # and add to the numerator array
+                for i in range(0,self.inDim):
                     if len(orderList)<(outDim*inDim):
                         string = "Input # " + str(i+1) + " Output # " + str(j+1)
                         orderList.append(string)
@@ -357,7 +401,9 @@ class Signal:
                     denTemp.append([taupSpace[index2],1.])
                 nums.append(numTemp)
                 dens.append(denTemp)
-                
+              
+            # Use transfer function class to simulate system response
+            # to MIMO input and randomized parameters 
             nums=np.array(nums)
             dens=np.array(dens)
             sys = control.tf(nums,dens)
@@ -375,7 +421,8 @@ class Signal:
                 
             # Subsequently update the iterator to move down row
             iterator+=1
-            
+        
+        # Randomly pick training and validation indices 
         index = range(0,len(yArray))
         if self.trainFrac!=1:  
             train = random.sample(index,int(trainFrac*numTrials))
@@ -447,27 +494,31 @@ class Signal:
         
         return self.xData,self.yData
     
-    
+    # Function that takes the input parameters and stacks into one 
+    # array, then processes so that data can be used for any size
+    # MIMO system. Hasn't been validated on greater that 2x2
     def stretch_MIMO(self,name):
         kps=self.kps; taus=self.taus
         uArray=self.uArray; yArray=self.yArray
         a,b,c = np.shape(self.uArray)
-        self.xDataMat = np.full((a*2,b,c),0.)
-        self.yDataMat = np.full((a*2,2),0.)
+        self.xDataMat = np.full((a*self.outDim,b,c),0.)
+        self.yDataMat = np.full((a*self.outDim,2),0.)
         if name=='kp':
-            self.yDataMat[:a,:] = kps[:,:2]
-            self.yDataMat[a:,:]  = kps[:,2:]
-            self.xDataMat[:a,:,0] = uArray[:,:,0]*yArray[:,:,0]
-            self.xDataMat[:a,:,1] = uArray[:,:,1]*yArray[:,:,0]
-            self.xDataMat[a:,:,0] = uArray[:,:,0]*yArray[:,:,1]
-            self.xDataMat[a:,:,1] = uArray[:,:,1]*yArray[:,:,1]  
+            for j in range(0,self.inDim):
+                dim = self.inDim
+                self.yDataMat[a*j:a*(j+1),:] = kps[:,dim*j:dim*(j+1)]
+            
+            for i in range(0,self.outDim):
+                for j in range(0,self.inDim):
+                    self.xDataMat[a*i:a*(i+1),:,j] = uArray[:,:,j]*yArray[:,:,i]
         else:
-            self.yDataMat[:a,:] = taus[:,:2]
-            self.yDataMat[a:,:]  = taus[:,2:]
-            self.xDataMat[:a,:,0] = yArray[:,:,0] - uArray[:,:,0]
-            self.xDataMat[:a,:,1] = yArray[:,:,0] - uArray[:,:,1]
-            self.xDataMat[a:,:,0] = yArray[:,:,1] - uArray[:,:,0]
-            self.xDataMat[a:,:,1] = yArray[:,:,1] - uArray[:,:,1]
+            for j in range(0,self.inDim):
+                dim = self.inDim
+                self.yDataMat[a*j:a*(j+1),:] = taus[:,dim*j:dim*(j+1)]
+
+            for i in range(0,self.outDim):
+                for j in range(0,self.inDim):
+                    self.xDataMat[a*i:a*(i+1),:,j] = yArray[:,:,i] - uArray[:,:,j]
         
         return self.xDataMat,self.yDataMat
     

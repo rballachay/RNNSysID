@@ -444,10 +444,10 @@ class Model:
         
         if not(probabilityCall):
             prob = Probability(sig)
-            #Kperror,tauperror,thetaerror = prob.get_errors()
+            Kperror,tauperror = prob.get_errors()
         
-        kpPred = np.split(self.modelDict['kp'].predict(sig.xData['kp']),2,axis=0)
-        tauPred = np.split(self.modelDict['tau'].predict(sig.xData['tau']),2,axis=0)
+        kpPred = np.split(self.modelDict['kp'].predict(sig.xData['kp']),sig.outDim,axis=0)
+        tauPred = np.split(self.modelDict['tau'].predict(sig.xData['tau']),sig.outDim,axis=0)
             
         self.kpPredictions = np.concatenate(kpPred,axis=1)
         self.tauPredictions = np.concatenate(tauPred,axis=1)
@@ -456,9 +456,7 @@ class Model:
         uArrays = sig.uArray
         yArrays = sig.yArray
         
-        for (k,index) in enumerate(sig.train):
-            index = int(np.floor(index/2))
-            k = int(np.floor(k/2))
+        for k in range(0,sig.numTrials):
             
             taup = self.tauPredictions[k]
             Kp = self.kpPredictions[k]
@@ -472,12 +470,12 @@ class Model:
             # The transfer function from the 2nd input to the 1st output is
             # (3s + 4) / (6s^2 + 5s + 4).
             # num = [[[1., 2.], [3., 4.]], [[5., 6.], [7., 8.]]]
-            for j in range(0,2):
+            for j in range(0,sig.outDim):
                 numTemp = []
                 denTemp = []
-                for i in range(0,2):
-                    numTemp.append([Kp[(2*j)+i]])
-                    denTemp.append([taup[(2*j)+i],1.])
+                for i in range(0,sig.inDim):
+                    numTemp.append([Kp[(sig.inDim*j)+i]])
+                    denTemp.append([taup[(sig.inDim*j)+i],1.])
                 nums.append(numTemp)
                 dens.append(denTemp)
                 
@@ -500,7 +498,7 @@ class Model:
                 plt.plot(t,yTrue[:,0],'r',label=s2)
                 plt.plot(t,yPred[:,0],'k--',label=s1)
                 plt.plot(t,yTrue[:,1],'b')
-                plt.plot(t,yTrue[:,1],'g--')
+                plt.plot(t,yPred[:,1],'g--')
                 plt.xlabel("Time (s)")
                 plt.ylabel("Change from set point")
                 plt.legend()
@@ -599,10 +597,12 @@ class Probability:
             self.trainFrac = sig.trainFrac
             self.type = sig.type
             
-        if (maxError==5 and numTrials==1000):
+        if (self.maxError==5 and numTrials==1000):
             suffix = "Default"
+            print("\n\n\n\n")
         else:
             suffix = 'error_' + str(maxError) + '_nTrials_' + str(numTrials)
+        
         if self.type=="SISO":
             self.errorCSV = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Uncertainty/SISO/Data/propData"+suffix+".csv"
             self.SISO_probability_estimate()

@@ -29,7 +29,7 @@ sig.SISO_simulation(KpRange=[0.75,10.5],tauRange=[0.75,10.5])
 # Only uncomment if you want to train and not predict
 trainModel = Model(nstep)
 trainModel.train_SISO(sig,epochs=200)
-"""
+
 
 # In this case, since we are only loading the model, not trying to train it,
 # we can use function simulate and preprocess
@@ -41,3 +41,4 @@ predictor.load_SISO()
 
 # Function to make predictions based off the simulation 
 i = predictor.predict_SISO(sig,savePredict=True)
+"""
