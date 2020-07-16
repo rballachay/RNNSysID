@@ -5,9 +5,6 @@ Created on Wed Jun 17 14:50:26 2020
 
 @author: RileyBallachay
 """
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy.integrate import odeint
 from Signal import Signal
 from Model import Model
 

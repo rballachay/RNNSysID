@@ -8,19 +8,9 @@ Created on Tue Jun 30 16:25:30 2020
 import numpy as np
 import random
 import matplotlib.pyplot as plt
-from scipy.integrate import odeint,ode
 import scipy.signal as signal
-import numpy as np
-import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
-from scipy.fft import fft
-from sklearn.preprocessing import StandardScaler
-from scipy.stats import kurtosis,skew,entropy,variation,gmean
-from sklearn.metrics import r2_score
 from mpl_toolkits.mplot3d import Axes3D
 import control as control
-import control.matlab as matlab
 
 class Signal:
     """
@@ -98,8 +88,6 @@ class Signal:
     
     """
     
-    # Going to need this to be interactive 
-    # i.e. the function waits until the 
     def __init__(self,numTrials=100,nstep=100,timelength=100,trainFrac=0.7,numPlots=5,stdev=5):
         self.numTrials = numTrials
         self.nstep = nstep
@@ -108,10 +96,11 @@ class Signal:
         self.valFrac = 1-trainFrac
         self.numPlots = numPlots
         self.stdev=stdev
-
-    # This module is for simulating a wave function with 
-    # random frequency and amplitude within the specified range
+    
+    
     def random_signal(self):
+        """Module that simulates a wave function with 
+        random frequency and amplitude within the specified range"""
         y = np.random.rand(self.nstep)
         y[:10] = 0
         y[-10:] = 0     
@@ -120,9 +109,10 @@ class Signal:
         filtered = signal.convolve(y, win, mode='same') / sum(win)
         return filtered
     
-    # This function returns a pseudo-random binary sequence 
-    # which ranges between -1 and +1
-    def PRBS(self, prob_switch=0.1, Range=[-1.0, 1.0]):        
+
+    def PRBS(self, prob_switch=0.1, Range=[-1.0, 1.0]):  
+        """Returns a pseudo-random binary sequence 
+        which ranges between -1 and +1"""
         min_Range = min(Range)
         max_Range = max(Range)
         gbn = np.ones(self.nstep)
@@ -175,35 +165,36 @@ class Signal:
             noise = np.random.normal(0,(stdev/100)*np.amax(array),(length,))
         return array+noise
     
-    """
-    Module which produces simulation of SISO system given the input parameters. 
-    Contains a loop which iterates for the total number of samples and appends
-    to an array. 
     
-    Uses pseudo-random binary signal with amplitude in [-1,1] and linear first 
-    order plus dead time system, modelled using transfer function class in
-    the Control package to simulate the linear system.
-    
-    Purpose is to produce simulated system responses with varying quantities 
-    of noise to simulate real linear system responses in order to train and
-    validate models built with the Model class.
-    
-    Parameters
-    ----------
-    KpRange : tuple, default=(1,10)
-        Possible range for gains. An equally spaced array between the maximum 
-        and minimum are chosen based on the number of simulations.
-    
-    tauRange : tuple, default=(1,10)
-        Possible range for time constant. An equally spaced array between the 
-        maximum and minimum are chosen based on the number of simulations.
-     
-    thetaRange : tuple, default=(1,10)
-        Possible range for time delays. An equally spaced array between the 
-        maximum and minimum are chosen based on the number of simulations.
-        
-    """
     def SISO_simulation(self,KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10],stdev=5):
+        """
+        Module which produces simulation of SISO system given the input parameters. 
+        Contains a loop which iterates for the total number of samples and appends
+        to an array. 
+        
+        Uses pseudo-random binary signal with amplitude in [-1,1] and linear first 
+        order plus dead time system, modelled using transfer function class in
+        the Control package to simulate the linear system.
+        
+        Purpose is to produce simulated system responses with varying quantities 
+        of noise to simulate real linear system responses in order to train and
+        validate models built with the Model class.
+        
+        Parameters
+        ----------
+        KpRange : tuple, default=(1,10)
+            Possible range for gains. An equally spaced array between the maximum 
+            and minimum are chosen based on the number of simulations.
+        
+        tauRange : tuple, default=(1,10)
+            Possible range for time constant. An equally spaced array between the 
+            maximum and minimum are chosen based on the number of simulations.
+         
+        thetaRange : tuple, default=(1,10)
+            Possible range for time delays. An equally spaced array between the 
+            maximum and minimum are chosen based on the number of simulations.
+            
+        """
         # Access all the attributes from initialization
         numTrials=self.numTrials; nstep=self.nstep;
         timelength=self.timelength; trainFrac=self.trainFrac
@@ -307,42 +298,43 @@ class Signal:
         
         return uArray,yArray,taus,kps,thetas,train,test
     
-    """
-    Module which produces simulation of MIMO system given the input parameters. 
-    Contains a loop which iterates for the total number of samples and appends
-    to an array. 
     
-    Uses pseudo-random binary signal with amplitude in [-1,1] and linear first 
-    order plus dead time system, modelled using transfer function class in
-    the Control package to simulate the linear system.
-    
-    Purpose is to produce simulated system responses with varying quantities 
-    of noise to simulate real linear system responses in order to train and
-    validate models built with the Model class.
-    
-    Parameters
-    ----------
-    inDim : int, default=2 
-        Number of input variables to MIMO system. Currently only set up
-        to handle MIMO system with 2 inputs and 2 outputs.
-        
-    outDim : int, default=2
-        Number of output variables from MIMO system. Currently only 
-        configured to handle MIMO with 2 inputs and 2 outputs.
-    
-    stdev : float, default=5.
-        Standard deviation of gaussian error added to the simulated system.
-        
-    KpRange : tuple, default=(1,10)
-        Possible range for gains. An equally spaced array between the maximum 
-        and minimum are chosen based on the number of simulations.
-    
-    tauRange : tuple, default=(1,10)
-        Possible range for time constant. An equally spaced array between the 
-        maximum and minimum are chosen based on the number of simulations.
-        
-    """
     def MIMO_simulation(self,stdev=5,inDim=2,outDim=2,KpRange=[1,10],tauRange=[1,10]):
+        """
+        Module which produces simulation of MIMO system given the input parameters. 
+        Contains a loop which iterates for the total number of samples and appends
+        to an array. 
+        
+        Uses pseudo-random binary signal with amplitude in [-1,1] and linear first 
+        order plus dead time system, modelled using transfer function class in
+        the Control package to simulate the linear system.
+        
+        Purpose is to produce simulated system responses with varying quantities 
+        of noise to simulate real linear system responses in order to train and
+        validate models built with the Model class.
+        
+        Parameters
+        ----------
+        inDim : int, default=2 
+            Number of input variables to MIMO system. Currently only set up
+            to handle MIMO system with 2 inputs and 2 outputs.
+            
+        outDim : int, default=2
+            Number of output variables from MIMO system. Currently only 
+            configured to handle MIMO with 2 inputs and 2 outputs.
+        
+        stdev : float, default=5.
+            Standard deviation of gaussian error added to the simulated system.
+            
+        KpRange : tuple, default=(1,10)
+            Possible range for gains. An equally spaced array between the maximum 
+            and minimum are chosen based on the number of simulations.
+        
+        tauRange : tuple, default=(1,10)
+            Possible range for time constant. An equally spaced array between the 
+            maximum and minimum are chosen based on the number of simulations.
+            
+        """
         # Access all the attributes from initialization
         numTrials=self.numTrials; nstep=self.nstep;
         timelength=self.timelength; trainFrac=self.trainFrac
@@ -443,10 +435,11 @@ class Signal:
         self.plot_parameter_space(tauArray,KpArray,train,test)
         
         return uArray,yArray,tauArray,KpArray,train,test
-            
-    # This function uses the training and testing indices produced during
-    # simulate() to segregate the training and validation sets
+     
+    
     def preprocess(self,xData,yData):
+        """This function uses the training and testing indices produced during
+        simulate() to segregate the training and validation sets"""
         # If array has more than 2 dimensions, use 
         # axis=2 when reshaping, otherwise set to 1
         try:
@@ -472,10 +465,10 @@ class Signal:
         return x_train,x_val,y_train,y_val,numDim
     
     
-    # This function makes it easier to run a bunch of simulations and 
-    # automatically return the validation and testing sets without 
-    # calling each function separately. 
     def SISO_validation(self):
+        """This function makes it easier to run a bunch of simulations and 
+        automatically return the validation and testing sets without 
+        calling each function separately. """
         # Since no training is occurring, can skip separation of testing and validation sets
         self.trainFrac = 1
         
@@ -494,10 +487,11 @@ class Signal:
         
         return self.xData,self.yData
     
-    # Function that takes the input parameters and stacks into one 
-    # array, then processes so that data can be used for any size
-    # MIMO system. Hasn't been validated on greater that 2x2
+    
     def stretch_MIMO(self,name):
+        """Function that takes the input parameters and stacks into one 
+        array, then processes so that data can be used for any size
+        MIMO system. Hasn't been validated on greater that 2x2"""
         kps=self.kps; taus=self.taus
         uArray=self.uArray; yArray=self.yArray
         a,b,c = np.shape(self.uArray)
@@ -522,10 +516,11 @@ class Signal:
         
         return self.xDataMat,self.yDataMat
     
-    # This function makes it easier to run a bunch of simulations and 
-    # automatically return the validation and testing sets without 
-    # calling each function separately. 
+    
     def MIMO_validation(self):
+        """This function makes it easier to run a bunch of simulations and 
+        automatically return the validation and testing sets without 
+        calling each function separately. """
         # Since no training is occurring, can skip separation of testing and validation sets
         self.trainFrac = 1
         
