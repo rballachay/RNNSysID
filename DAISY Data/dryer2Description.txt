@@ -1,0 +1,37 @@
+
+This file describes the data in the dryer.dat file.
+1. Contributed by:
+        Jan Maciejowski
+        Cambridge University, Engineering Department
+        Trumpington Street, Cambridge
+        CB2 1PZ, England.
+        jmm@eng.cam.ac.uk
+2. Process/Description:
+        Data from an industrial dryer (by Cambridge Control Ltd)
+3. Sampling time:
+        10 sec
+4. Number of samples:
+        867 samples
+5. Inputs:
+        a. fuel flow rate
+        b. hot gas exhaust fan speed
+        c. rate of flow of raw material
+6. Outputs:
+        a. dry bulb temperature
+        b. wet bulb temperature
+        c. moisture content of raw material
+7. References:
+        a. Maciejowski J.M., Parameter estimation of multivariable
+        systems using balanced realizations, in:
+        Bittanti,S. (ed), Identification,
+        Adaptation, and Learning, Springer (NATO ASI Series), 1996.
+        b. Chou C.T., Maciejowski J.M., System Identification Using
+        Balanced Parametrizations, IEEE Transactions on Automatic Control,
+        vol. 42, no. 7, July 1997, pp. 956-974.
+8. Known properties/peculiarities:
+
+9. Some MATLAB-code to retrieve the data
+        !gunzip dryer.dat.Z
+        load dryer.dat
+        U=dryer(:,2:4);
+        Y=dryer(:,5:7);

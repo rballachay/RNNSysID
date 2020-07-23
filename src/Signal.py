@@ -7,6 +7,7 @@ Created on Tue Jun 30 16:25:30 2020
 """
 import numpy as np
 import random
+import math
 import matplotlib.pyplot as plt
 import scipy.signal as signal
 from mpl_toolkits.mplot3d import Axes3D
@@ -96,6 +97,7 @@ class Signal:
         self.valFrac = 1-trainFrac
         self.numPlots = numPlots
         self.stdev=stdev
+        self.special_value=-99
     
     
     def random_signal(self):
@@ -109,7 +111,23 @@ class Signal:
         filtered = signal.convolve(y, win, mode='same') / sum(win)
         return filtered
     
-
+    def PRSS(self,length,prob_switch=0.5):
+        gbn = np.ones(length)
+        gbn = gbn*random.choice([-1,1])
+        magnitude = np.ones(length)
+        for i in range(0,length-5,5):
+            # For changing sign
+            prob=np.random.random()
+            gbn[i:i+5] = gbn[i]
+            magnitude[i:i+5] = magnitude[i]
+            if prob<prob_switch:
+                mag = random.choice([-0.5,-1,-2,0.5,1,2])
+                gbn[i:i+5] = gbn[i:i+5] + mag
+                
+        gbn=gbn*magnitude
+        return np.array(gbn)
+                
+    
     def PRBS(self, prob_switch=0.1, Range=[-1.0, 1.0]):  
         """Returns a pseudo-random binary sequence 
         which ranges between -1 and +1"""
@@ -129,9 +147,9 @@ class Signal:
                 gbn[i] = min_Range
         return gbn
  
-    # This function plots the parameter space for a first 
-    # order plus time delay model in 3D coordinates
     def plot_parameter_space(self,x,y,trainID,valID,z=False):
+        """This function plots the parameter space for a first 
+        order plus time delay model in 3D coordinates"""
         if z:
             x=np.array(x); y=np.array(y); z=np.array(z)
             figgy = plt.figure(dpi=200)
@@ -152,9 +170,9 @@ class Signal:
             plt.ylabel("τ (Time Constant)")
             plt.xlabel("Kp (Gain)")
     
-    # Generate gaussian noise with mean and standard deviation
-    # of 5% of the maximum returned value. 
     def gauss_noise(self,array,stdev):
+        """Generate gaussian noise with mean and standard deviation
+        of 5% of the maximum returned value."""
         # If the array has 2 dimensions, this will capture it
         # Otherwise, it will evaluate the length of 1D array
         try:
@@ -165,8 +183,26 @@ class Signal:
             noise = np.random.normal(0,(stdev/100)*np.amax(array),(length,))
         return array+noise
     
+    def get_xData(uArray,yArray):
+        """ Need an isolated and mutable method for 
+        preprocessing SISO xData that can be updated and 
+        used to preprocess training and prediction data"""
+        def preprocess_theta(ySlice):
+            amax = np.amax(abs(ySlice))
+            ySlice = ySlice/amax
+            return ySlice
+        
+        amax = np.amax(abs(uArray))
+        uArray = uArray/amax
+        yArray = yArray/amax
+        
+        thetaData1 = np.apply_along_axis(preprocess_theta, 1, yArray)
+        thetaData2 = np.apply_along_axis(preprocess_theta, 1, uArray)
+        thetaData = thetaData1-thetaData2
+        xDatas = [yArray,yArray-uArray,thetaData]
+        return xDatas
     
-    def SISO_simulation(self,KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10],stdev=5):
+    def SISO_simulation(self,KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10]):
         """
         Module which produces simulation of SISO system given the input parameters. 
         Contains a loop which iterates for the total number of samples and appends
@@ -195,6 +231,7 @@ class Signal:
             maximum and minimum are chosen based on the number of simulations.
             
         """
+        self.nstep=300
         # Access all the attributes from initialization
         numTrials=self.numTrials; nstep=self.nstep;
         timelength=self.timelength; trainFrac=self.trainFrac
@@ -203,8 +240,8 @@ class Signal:
         self.type = "SISO"
         
         # Initialize the arrays which will store the simulation data
-        uArray = np.full((numTrials,nstep),0.)
-        yArray = np.full((numTrials,nstep),0.)
+        uArray = np.full((numTrials,300),0.)
+        yArray = np.full((numTrials,300),0.)
         
         # Make arrays containing parameters tau, theta
         KpSpace = np.linspace(KpRange[0],KpRange[1],nstep)
@@ -221,6 +258,7 @@ class Signal:
         taus = []
         thetas=[]
         kps=[]
+        lengths=[]
         
         # While loop which iterates over each of the parameter scenarios
         iterator=0
@@ -236,41 +274,48 @@ class Signal:
             taup = taupSpace[index1]
             theta = thetaSpace[index2]
             
+            length = np.random.randint(5,30)*10
+            lengths.append(length)
             # Generate random signal using
-            u = (self.PRBS())  
-            t = np.linspace(0,timelength,nstep)
+            u = (self.PRSS(length))  
+            t = np.linspace(0,length,length)
             
             # Subtract time delay and get the 'simulated time' which has
             # no physical significance. Fill the delay with zeros and
             # start signal after delay is elapsed
             tsim = t - theta
-            yindStart = next((i for i, x in enumerate(tsim) if x>0), None)
+            yindStart = next((i for i, x in enumerate(tsim) if x>=0), None)
             tInclude = tsim[yindStart-1:]
-            uInclude = u[yindStart-1:]
+            uInclude = u[:len(u)-(yindStart-1)]
             
             # Use transfer function module from control to simulate 
             # system response after delay then add to zeros
-            sys = control.tf([Kp,] ,[taup,1.])
+            sys = control.tf([Kp,],[taup,1.])
             _,yEnd,_ = control.forced_response(sys,U=uInclude,T=tInclude)
-            yEnd = self.gauss_noise(yEnd,stdev)
+            yEnd = self.gauss_noise(yEnd,self.stdev)
             y = np.concatenate((np.zeros((len(t)-len(tInclude))),yEnd))
-            
-            # Add simulation to array with all simulations
-            uArray[iterator,:] = u
-            yArray[iterator,:]= y
+           
+            yPad = np.full(300,0)
+            uPad = np.full(300,0)
+            yPad[-length:]=y
+            uPad[-length:]=u
+   
+            uArray[iterator,:] = uPad
+            yArray[iterator,:]= yPad
             taus.append(taup)
             thetas.append(theta)
             kps.append(Kp)
-
+            
             # Only plot every 100 input signals
             if (iterator)<self.numPlots:
                 plt.figure(dpi=100)
-                plt.plot(t[:200],u[:200],label='Input Signal')
-                plt.plot(t[:200],y[:200], label='FOPTD Response')
+                plt.plot(t,u,label='Input Signal')
+                plt.plot(t,y, label='FOPTD Response')
                 plt.xlabel((theta))
                 plt.legend()
                 plt.show()
-                
+            
+
             # Subsequently update the iterator to move down row
             iterator+=1
         
@@ -279,8 +324,8 @@ class Signal:
         # to one and this portion will be skipped
         index = range(0,len(yArray))
         if self.trainFrac!=1:  
-            train = random.sample(index,int(trainFrac*numTrials))
-            test = [item for item in list(index) if item not in train]
+            train = np.sort(random.sample(index,int(trainFrac*numTrials)))
+            test = np.sort(np.array([item for item in list(index) if item not in train]))
         else:
             train=index
             test=[]
@@ -295,6 +340,8 @@ class Signal:
         self.thetas = thetas
         self.train = train
         self.test = test
+        self.lengths = length
+        self.numTrials = numTrials
         
         return uArray,yArray,taus,kps,thetas,train,test
     
@@ -359,12 +406,12 @@ class Signal:
         # to simulation arrays
         iterator=0
         while(iterator<numTrials):
-            u = self.PRBS(prob_switch=0.05)
+            u = self.PRSS()
             
             # Run a new PRBS for each input
             # variable and stack in input
             for i in range(1,inDim):
-                prbs = self.PRBS(prob_switch=0.05)
+                prbs = self.PRSS()
                 u = np.stack((u,prbs),axis=1)
             
             uArray[iterator,:,:] = u
@@ -406,8 +453,8 @@ class Signal:
             # Only plot every 100 input signals
             if (iterator)<self.numPlots:
                 plt.figure(dpi=100)
-                plt.plot(t[:200],u[:200],label='Input Signal')
-                plt.plot(t[:200],y[:200], label='FOPTD Response')
+                plt.plot(t,u,label='Input Signal')
+                plt.plot(t,y, label='FOPTD Response')
                 plt.legend()
                 plt.show()
                 
@@ -452,15 +499,15 @@ class Signal:
         trainspace = xData[self.train]
         valspace = xData[self.test] 
         
-        x_train= trainspace.reshape((int(self.numTrials*self.trainFrac),self.nstep,numDim))    
-        x_val = valspace.reshape((int(self.numTrials*(1-self.trainFrac)),self.nstep,numDim))
+        x_train= trainspace.reshape((math.floor(self.numTrials*self.trainFrac),self.nstep,numDim))    
+        x_val = valspace.reshape((math.floor(self.numTrials*(1-self.trainFrac)),self.nstep,numDim))
         
         if self.type=="MIMO":
             y_val = np.array([yData[i,:] for i in self.test])
             y_train = np.array([yData[i,:] for i in self.train])
         else:
-            y_val = [yData[i] for i in self.test]
-            y_train = [yData[i] for i in self.train]
+            y_val = np.array([yData[i] for i in self.test])
+            y_train = np.array([yData[i] for i in self.train])
             
         return x_train,x_val,y_train,y_val,numDim
     
@@ -473,7 +520,7 @@ class Signal:
         self.trainFrac = 1
         
         uArray,yArray,taus,kps,thetas,train,test = self.SISO_simulation(stdev=self.stdev)
-        xDatas = [yArray,yArray,(yArray-np.mean(yArray))/np.std(yArray) - uArray]
+        xDatas = self.get_xData(uArray,yArray)
         yDatas = [taus, kps, thetas]
         
         self.xData ={};
