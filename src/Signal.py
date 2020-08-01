@@ -231,7 +231,6 @@ class Signal:
             maximum and minimum are chosen based on the number of simulations.
             
         """
-        self.nstep=300
         # Access all the attributes from initialization
         numTrials=self.numTrials; nstep=self.nstep;
         timelength=self.timelength; trainFrac=self.trainFrac
@@ -240,8 +239,8 @@ class Signal:
         self.type = "SISO"
         
         # Initialize the arrays which will store the simulation data
-        uArray = np.full((numTrials,300),0.)
-        yArray = np.full((numTrials,300),0.)
+        uArray = np.full((numTrials,nstep),0.)
+        yArray = np.full((numTrials,nstep),0.)
         
         # Make arrays containing parameters tau, theta
         KpSpace = np.linspace(KpRange[0],KpRange[1],nstep)
@@ -258,7 +257,6 @@ class Signal:
         taus = []
         thetas=[]
         kps=[]
-        lengths=[]
         
         # While loop which iterates over each of the parameter scenarios
         iterator=0
@@ -274,11 +272,9 @@ class Signal:
             taup = taupSpace[index1]
             theta = thetaSpace[index2]
             
-            length = np.random.randint(5,30)*10
-            lengths.append(length)
             # Generate random signal using
-            u = (self.PRSS(length))  
-            t = np.linspace(0,length,length)
+            u = (self.PRBS())  
+            t = np.linspace(0,nstep,nstep)
             
             # Subtract time delay and get the 'simulated time' which has
             # no physical significance. Fill the delay with zeros and
@@ -295,13 +291,9 @@ class Signal:
             yEnd = self.gauss_noise(yEnd,self.stdev)
             y = np.concatenate((np.zeros((len(t)-len(tInclude))),yEnd))
            
-            yPad = np.full(300,0)
-            uPad = np.full(300,0)
-            yPad[-length:]=y
-            uPad[-length:]=u
    
-            uArray[iterator,:] = uPad
-            yArray[iterator,:]= yPad
+            uArray[iterator,:] = u
+            yArray[iterator,:]= y
             taus.append(taup)
             thetas.append(theta)
             kps.append(Kp)
@@ -340,7 +332,6 @@ class Signal:
         self.thetas = thetas
         self.train = train
         self.test = test
-        self.lengths = length
         self.numTrials = numTrials
         
         return uArray,yArray,taus,kps,thetas,train,test
@@ -406,12 +397,12 @@ class Signal:
         # to simulation arrays
         iterator=0
         while(iterator<numTrials):
-            u = self.PRSS()
+            u = self.PRBS()
             
             # Run a new PRBS for each input
             # variable and stack in input
             for i in range(1,inDim):
-                prbs = self.PRSS()
+                prbs = self.PRBS()
                 u = np.stack((u,prbs),axis=1)
             
             uArray[iterator,:,:] = u

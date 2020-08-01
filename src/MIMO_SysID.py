@@ -11,15 +11,14 @@ import time
 
 # These constants are also defined in the Signal module 
 # Don't change here unless you also change them there
-numTrials = 100000
-nstep = 500
-timelength = 500
+numTrials = 10000
+nstep = 400
+timelength = 400
 trainFrac = .7
   
 start_time = time.time()
-
+ 
 sig = Signal(numTrials,nstep,timelength,trainFrac,stdev=5)
-
 
 sig.MIMO_simulation()
 print("--- %s seconds ---" % (time.time() - start_time))
@@ -28,7 +27,7 @@ print("--- %s seconds ---" % (time.time() - start_time))
 # These two lines are for training the model based on nstep and the sig data
 # Only uncomment if you want to train and not predict
 trainModel = Model(nstep)
-trainModel.train_MIMO(sig,epochs=50)
+trainModel.train_MIMO(sig,epochs=100)
 print("--- %s seconds ---" % (time.time() - start_time))
 """
 

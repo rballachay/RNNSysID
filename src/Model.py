@@ -154,6 +154,8 @@ class Model:
         xDatas = Signal.get_xData(uArray,yArray)
         yDatas = [kps, taus, thetas]
         
+        self.x=xDatas[0]
+        
         # You have to construct a signal with all the necessary parameters before 
         if not(sig):
             print("Please initialize the class signal with model parameters first")
@@ -164,24 +166,34 @@ class Model:
             parentDir = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/"
             time = str(datetime.datetime.now())[:16]
             plotDir = parentDir + time + '/'
+            checkptDir = plotDir + 'Checkpoints/'
             os.mkdir(plotDir)
+            os.mkdir(checkptDir)
         
         # iterate over each of the parameters, train the model, save to the model
         # path and plot loss and validation curves
         modelList = []
-        for j in range(1,len(xDatas)):
+        for j in range(0,len(xDatas)):
             xData = xDatas[j]
             yData = yDatas[j]   
             x_train,x_val,y_train,y_val,numDim = sig.preprocess(xData,yData)
             
             if probabilistic:
                  probModel = "prob"
+                 extension = ""
                  model = self.__FOPTD_probabilistic()
             else:
                 probModel = ""
+                extension = ".h5"
                 model = self.__FOPTD()
-                
+            
+            print(model.summary())
+            
+            # Section for including callbacks (custom and checkpoint)
+            checkpoint_path = checkptDir + self.names[j] + '.cptk'
             MTC = MyThresholdCallback(0.95)
+            cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,save_weights_only=True,save_best_only=True,verbose=1)
+            
             print("Fit model on training data")
             history = model.fit(
                 x_train,
@@ -192,7 +204,7 @@ class Model:
                 # monitoring validation loss and metrics
                 # at the end of each epoch
                 validation_data=(x_val, y_val),
-                callbacks=[MTC]
+                callbacks=[MTC,cp_callback]
             )  
             
             modelList.append(model)
@@ -200,10 +212,10 @@ class Model:
             
             # Only save model if true
             if saveModel:
-                modelpath = plotDir+self.names[j]+probModel+".h5"
+                modelpath = plotDir+self.names[j]+probModel+extension
                 fileOverwriter=0
                 while os.path.isfile(modelpath):
-                    modelpath = plotDir+self.names[j]+probModel+"_"+str(fileOverwriter)+".h5"
+                    modelpath = plotDir+self.names[j]+probModel+"_"+str(fileOverwriter)+extension
                     fileOverwriter+=1
                 model.save(modelpath)
             
@@ -299,7 +311,9 @@ class Model:
             parentDir = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/"
             time = str(datetime.datetime.now())[:16]
             plotDir = parentDir + time + '/'
+            checkptDir = plotDir + 'Checkpoints/'
             os.mkdir(plotDir)
+            os.mkdir(checkptDir)
         
         # iterate over each of the parameters, train the model, save to the model
         # path and plot loss and validation curves
@@ -307,7 +321,6 @@ class Model:
         
         # Iterate over tau and kp parameters
         for (k,parameter) in enumerate(parameters):
-            
             xData,yData = sig.stretch_MIMO(parameter)
             x_train,x_val,y_train,y_val,numDim = sig.preprocess(xData,yData)
             
@@ -318,36 +331,44 @@ class Model:
             else:
                 model = self.__MIMO_tau(x_train,y_train)
             
-            # Set threshold to stop training when coefficient of determination
-            # gets to 0.9. 
+            print(model.summary())
+            
+            # Set threshold to stop training when coefficient of determinatio gets to 0.9. 
+            # Section for including callbacks (custom and checkpoint)
+            checkpoint_path = checkptDir + self.names[k] + '.cptk'
+            cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,save_weights_only=True,save_best_only=True,verbose=1)
+
             if parameter=='kp':
-                MTC = MyThresholdCallback(0.97)
+                MTC = MyThresholdCallback(0.95)
             else:
                 MTC = MyThresholdCallback(0.92)
+            
             print("Fit model on training data")
             history = model.fit(
                 x_train,
                 y_train,
-                batch_size=64,
+                batch_size=16,
                 epochs=epochs,
                 # We pass some validation for
                 # monitoring validation loss and metrics
                 # at the end of each epoch
                 validation_data=(x_val, y_val),
-                callbacks=[MTC]
+                callbacks=[MTC,cp_callback]
             )
             
             # Store each model in dictionary and list
             modelList.append(model)
             self.modelDict[self.names[k]] = model
-            predictions = model.predict(x_val)
-            
+            yhat = model(x_val)
+            predictions = np.array(yhat.mean())
+            stddevs = np.array(yhat.stddev())
+
             # Only save model if true
             if saveModel:
-                modelpath = plotDir+self.names[k]+".h5"
+                modelpath = plotDir+self.names[k]
                 fileOverwriter=0
                 while os.path.isfile(modelpath):
-                    modelpath = plotDir+self.names[k]+"_"+str(fileOverwriter)+".h5"
+                    modelpath = plotDir+self.names[k]+"_"+str(fileOverwriter)
                     fileOverwriter+=1
                 model.save(modelpath)
             
@@ -372,8 +393,10 @@ class Model:
                 plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
                 
                 for (i,ax) in enumerate(axes):
-                    ax.plot(y_val[:,0],predictions[:,0],'.b',label=parameter)
-                    r2 =("r\u00b2 = %.3f" % r2_score(y_val[:,i],predictions[:,i]))
+                    ax.plot(y_val[:,i],predictions[0,:,i],'.b',label=parameter)
+                    print(stddevs.shape)
+                    r2 =("r\u00b2 = %.3f" % r2_score(y_val[:,i],predictions[0,:,i]))
+                    ax.errorbar(y_val[:,i],predictions[0,:,i],yerr=stddevs[0,:,i]*2,fmt='none',ecolor='green')
                     ax.plot(np.linspace(0,10),np.linspace(0,10),'--r',label = r2)
                     ax.legend(prop={'size': 8})
                 
@@ -616,7 +639,7 @@ class Model:
         model.compile(optimizer='adam', loss='mean_squared_error',metrics=[self.coeff_determination])
         return model   
     
-    def __MIMO_kp(self,x_train,y_train):
+    def __MIMO_kp_old(self,x_train,y_train):
         length,width,height = x_train.shape
         outheight,outwidth = y_train.shape
         "MIMO model for predicting kp"
@@ -629,31 +652,109 @@ class Model:
         model.compile(optimizer='adam', loss='mean_squared_error',metrics=[self.coeff_determination])
         return model 
     
-    def __MIMO_tau(self,x_train,y_train):
+    def __MIMO_kp_old2(self,x_train,y_train):
+        length,width,height = x_train.shape
+        outheight,outwidth = y_train.shape
+        def structure_of_distributions(t,height):
+            structure_of_distributions = []
+            for i in range(height):
+                structure_of_distributions.append(tfd.Normal(loc=t[..., :1],scale=1e-3 + tf.math.softplus(0.1 * t[...,1:])))
+            
+            return tuple(structure_of_distributions)
+        
+        "MIMO model for predicting kp"
+        model = tf.keras.Sequential([
+        tf.keras.layers.GRU(width, activation='tanh',input_shape=(width,height)),
+        tfp.layers.DenseVariational(4,Model.posterior_mean_field,Model.prior_trainable,activation='linear',kl_weight=1/x_train.shape[0]),
+        tfp.layers.DistributionLambda(
+            make_distribution_fn = lambda t: tfd.independent_joint_distribution_from_structure(structure_of_distributions(t,height))
+            )
+        ])
+        # Compile the model
+        model.compile(optimizer='adam', loss='mean_squared_error',metrics=[self.coeff_determination])
+        return model     
+
+    
+    def __MIMO_kp(self,x_train,y_train):
+        length,width,height = x_train.shape
+        outheight,outwidth = y_train.shape
+        "Probabilistic model for SISO data"
+        negloglik = lambda y, rv_y: -rv_y.log_prob(y[:])
+        model = tf.keras.Sequential([
+        tf.keras.layers.GRU(200, activation='tanh',input_shape=(width,height)),
+        tf.keras.layers.Dense(10),
+        tfp.layers.DenseVariational(4,Model.posterior_mean_field,Model.prior_trainable,activation='linear',kl_weight=1/x_train.shape[0]),
+        tfp.layers.DistributionLambda(lambda t: tfd.Normal(loc=[t[..., :2],t[..., :2]],
+        scale=[1e-3 + tf.math.softplus(0.1 * t[...,2:]),1e-3 + tf.math.softplus(0.1 * t[...,2:])])),])
+        model.compile(optimizer='adam', loss=negloglik,metrics=[self.coeff_determination])
+        return model 
+    
+    def __MIMO_tau_old(self,x_train,y_train):
         length,width,height = x_train.shape
         outheight,outwidth = y_train.shape
         "MIMO model for predicting tau"
         model = keras.Sequential()
         # I tried almost every permuation of LSTM architecture and couldn't get it to work
+        
         model.add(layers.GRU(width, activation='tanh',input_shape=(width,height)))
-        model.add(layers.Dense(width, activation='linear',))
         #model.add(layers.Dense(width, activation='linear',))
+        model.add(layers.Dense(width, activation='linear',))
         model.add(layers.Dense(outwidth, activation='linear'))
         # Compile the model
         model.compile(optimizer='adam', loss='mean_squared_error',metrics=[self.coeff_determination])
         return model 
+    
+    def __MIMO_tau(self,x_train,y_train):
+        length,width,height = x_train.shape
+        outheight,outwidth = y_train.shape
+        "Probabilistic model for SISO data"
+        negloglik = lambda y, rv_y: -rv_y.log_prob(y[:])
+        model = tf.keras.Sequential([
+        tf.keras.layers.GRU(width, activation='tanh',input_shape=(width,height)),
+        tf.keras.layers.Dense(100),
+        tfp.layers.DenseVariational(4,Model.posterior_mean_field,Model.prior_trainable,activation='linear',kl_weight=1/x_train.shape[0]),
+        tfp.layers.DistributionLambda(lambda t: tfd.Normal(loc=[t[..., :2],t[..., :2]],
+        scale=[1e-3 + tf.math.softplus(0.1 * t[...,2:]),1e-3 + tf.math.softplus(0.1 * t[...,2:])])),])
+        model.compile(optimizer='adam', loss=negloglik,metrics=[self.coeff_determination])
+        return model 
+    
+    # Specify the surrogate posterior over `keras.layers.Dense` `kernel` and `bias`.
+    def posterior_mean_field(kernel_size, bias_size=0, dtype=None):
+      n = kernel_size + bias_size
+      c = np.log(np.expm1(1.))
+      return tf.keras.Sequential([
+          tfp.layers.VariableLayer(2 * n, dtype=dtype,initializer='glorot_uniform'),
+          tfp.layers.DistributionLambda(lambda t: tfd.Independent(
+              tfd.Normal(loc=t[..., :n],scale=1e-5 + tf.nn.softplus(c + t[..., n:])),reinterpreted_batch_ndims=1)),
+      ])
+      
+  # Specify the prior over `keras.layers.Dense` `kernel` and `bias`.
+    def prior_trainable(kernel_size, bias_size=0, dtype=None):
+      n = kernel_size + bias_size
+      return tf.keras.Sequential([
+          tfp.layers.VariableLayer(n, dtype=dtype,initializer='glorot_uniform'),
+          tfp.layers.DistributionLambda(lambda t: tfd.Independent(
+              tfd.Normal(loc=t, scale=1),reinterpreted_batch_ndims=1)),
+      ])
+
+    def __FOPTD_probabilistic_old(self): 
+        "Probabilistic model for SISO data"
+        negloglik = lambda y, rv_y: -rv_y.log_prob(y)
+        model = tf.keras.Sequential([
+        tf.keras.layers.GRU(100, activation='tanh',input_shape=(self.nstep,1)),
+        tfp.layers.DenseVariational(1+1,Model.posterior_mean_field,Model.prior_trainable,activation='linear',kl_weight=1/self.x.shape[0]),
+        tfp.layers.DistributionLambda(lambda t: tfd.Normal(loc=t[..., :1],scale=1e-3 + tf.math.softplus(0.1 * t[...,1:]))),])
+        model.compile(optimizer='adam', loss=negloglik,metrics=[self.coeff_determination])
+        return model
 
     def __FOPTD_probabilistic(self): 
         "Probabilistic model for SISO data"
+        negloglik = lambda y, rv_y: -rv_y.log_prob(y)
         model = tf.keras.Sequential([
         tf.keras.layers.GRU(100, activation='tanh',input_shape=(self.nstep,1)),
-        tf.keras.layers.Dense(100, activation='linear'),
-        tf.keras.layers.Dense(100, activation='linear'),
-        tf.keras.layers.Dense(1 + 1),
-        tfp.layers.DistributionLambda(
-              lambda t: tfd.Normal(loc=t[..., :1],scale= 0.2 + 50*(tf.math.softplus(0.05*t[...,1:])))),
-        ])
-        model.compile(optimizer='adam', loss='mean_squared_error',metrics=[self.coeff_determination])
+        tfp.layers.DenseVariational(1+1,Model.posterior_mean_field,Model.prior_trainable,activation='linear',kl_weight=1/self.x.shape[0]),
+        tfp.layers.DistributionLambda(lambda t: tfd.Normal(loc=t[..., :1],scale=1e-3 + tf.math.softplus(0.1 * t[...,1:]))),])
+        model.compile(optimizer='adam', loss=negloglik,metrics=[self.coeff_determination])
         return model
     
     def predict_real_SISO(self,uArray,yArray):
