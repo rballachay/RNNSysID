@@ -11,7 +11,7 @@ import time
 
 # These constants are also defined in the Signal module 
 # Don't change here unless you also change them there
-numTrials = 10000
+numTrials = 100000
 nstep = 400
 timelength = 400
 trainFrac = .7
@@ -20,7 +20,7 @@ start_time = time.time()
  
 sig = Signal(numTrials,nstep,timelength,trainFrac,stdev=5)
 
-sig.MIMO_simulation()
+uArray,yArray,tauArray,KpArray,train,test = sig.MIMO_simulation()
 print("--- %s seconds ---" % (time.time() - start_time))
 
 
@@ -29,8 +29,8 @@ print("--- %s seconds ---" % (time.time() - start_time))
 trainModel = Model(nstep)
 trainModel.train_MIMO(sig,epochs=100)
 print("--- %s seconds ---" % (time.time() - start_time))
-"""
 
+'''
 # In this case, since we are only loading the model, not trying to train it,
 # we can use function simulate and preprocess
 xData,yData = sig.MIMO_validation()
@@ -43,4 +43,4 @@ predictor.load_MIMO()
 i = predictor.predict_MIMO(sig,savePredict=True)
 
 print("--- %s seconds ---" % (time.time() - start_time))
-"""
+'''

@@ -145,6 +145,7 @@ class Signal:
                 gbn[i] = max_Range
             else:
                 gbn[i] = min_Range
+        gbn=gbn.reshape((len(gbn),1))
         return gbn
  
     def plot_parameter_space(self,x,y,trainID,valID,z=False):
@@ -273,23 +274,19 @@ class Signal:
             theta = thetaSpace[index2]
             
             # Generate random signal using
-            u = (self.PRBS())  
+            u = (self.PRBS()[:,0])  
             t = np.linspace(0,nstep,nstep)
             
             # Subtract time delay and get the 'simulated time' which has
             # no physical significance. Fill the delay with zeros and
             # start signal after delay is elapsed
-            tsim = t - theta
-            yindStart = next((i for i, x in enumerate(tsim) if x>=0), None)
-            tInclude = tsim[yindStart-1:]
-            uInclude = u[:len(u)-(yindStart-1)]
+            uInclude = np.concatenate((np.zeros(theta),u[:-theta]))
             
             # Use transfer function module from control to simulate 
             # system response after delay then add to zeros
             sys = control.tf([Kp,],[taup,1.])
-            _,yEnd,_ = control.forced_response(sys,U=uInclude,T=tInclude)
-            yEnd = self.gauss_noise(yEnd,self.stdev)
-            y = np.concatenate((np.zeros((len(t)-len(tInclude))),yEnd))
+            _,yEnd,_ = control.forced_response(sys,U=uInclude,T=t)
+            y = self.gauss_noise(yEnd,self.stdev)
            
    
             uArray[iterator,:] = u
@@ -337,7 +334,7 @@ class Signal:
         return uArray,yArray,taus,kps,thetas,train,test
     
     
-    def MIMO_simulation(self,stdev=5,inDim=2,outDim=2,KpRange=[1,10],tauRange=[1,10]):
+    def MIMO_simulation(self,stdev=5,inDim=2,outDim=2,KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10]):
         """
         Module which produces simulation of MIMO system given the input parameters. 
         Contains a loop which iterates for the total number of samples and appends
@@ -386,24 +383,26 @@ class Signal:
         yArray = np.full((numTrials,nstep,outDim),0.)
         KpArray = np.full((numTrials,outDim*inDim),0.)
         tauArray = np.full((numTrials,outDim*inDim),0.)
+        thetaArray = np.full((numTrials,outDim*inDim),0.)
         orderList = []
         
         # Make arrays containing parameters tau, theta
         KpSpace = np.linspace(KpRange[0],KpRange[1],nstep)
         taupSpace = np.linspace(tauRange[0],tauRange[1],nstep)
+        thetaSpace = np.arange(thetaRange[0],thetaRange[1])
         t = np.linspace(0,timelength,nstep)
         
         # Iterate over each of the simulations and add
         # to simulation arrays
         iterator=0
         while(iterator<numTrials):
-            u = self.PRBS()
+            u = self.PRBS(prob_switch=0.1/inDim)
             
             # Run a new PRBS for each input
             # variable and stack in input
             for i in range(1,inDim):
-                prbs = self.PRBS()
-                u = np.stack((u,prbs),axis=1)
+                prbs = self.PRBS(prob_switch=0.1/inDim)
+                u = np.concatenate((u,prbs),axis=1)
             
             uArray[iterator,:,:] = u
             nums = []
@@ -417,6 +416,7 @@ class Signal:
             for j in range(0,self.outDim):
                 numTemp = []
                 denTemp = []
+                thetas = []
                 # Iterate over each of the input dimensions
                 # and add to the numerator array
                 for i in range(0,self.inDim):
@@ -425,28 +425,48 @@ class Signal:
                         orderList.append(string)
                     index = np.random.randint(0,nstep)
                     index2 = np.random.randint(0,nstep)
-                    KpArray[iterator,(2*j)+i] = KpSpace[index]
+                    index3 = np.random.randint(0,9)
+                    KpArray[iterator,(self.outDim*j)+i] = KpSpace[index]
                     numTemp.append([KpSpace[index]])
-                    tauArray[iterator,(2*j)+i] = taupSpace[index2]
+                    tauArray[iterator,(self.outDim*j)+i] = taupSpace[index2]
                     denTemp.append([taupSpace[index2],1.])
-                nums.append(numTemp)
-                dens.append(denTemp)
+                    thetaArray[iterator,(self.outDim*j)+i] = thetaSpace[index3]
+                    thetas.append(thetaSpace[index3])
+                #nums.append(numTemp)
+                #dens.append(denTemp)
+                
+                bigU=np.transpose(u)
+                uSim=np.zeros_like(bigU)
+                for (idx,row) in enumerate(bigU):
+                    uSim[idx,:] = np.concatenate((np.zeros(thetas[idx]),row[:-thetas[idx]]))
+                numTemp=np.array([numTemp]);denTemp=np.array([denTemp])
+                sys = control.tf(numTemp,denTemp)
+                _,y,_ = control.forced_response(sys,U=uSim,T=t)
+                y=self.gauss_noise(y,stdev).reshape((len(y),1))
+                
+                if j==0:
+                    allY = y
+                else:
+                    allY = np.concatenate((allY,y),axis=1)
+                    
+            
               
             # Use transfer function class to simulate system response
             # to MIMO input and randomized parameters 
-            nums=np.array(nums)
-            dens=np.array(dens)
-            sys = control.tf(nums,dens)
-            _,y,_ = control.forced_response(sys,U=np.transpose(u),T=t)
-            y = np.transpose(self.gauss_noise(y,stdev))
-            yArray[iterator,:,:] = y
+            #nums=np.array(nums)
+            #dens=np.array(dens)
+            #sys = control.tf(nums,dens)
+            #_,y,_ = control.forced_response(sys,U=np.transpose(u),T=t)
+            #y = np.transpose(self.gauss_noise(y,stdev))
+            yArray[iterator,:,:] = allY
              
             # Only plot every 100 input signals
             if (iterator)<self.numPlots:
                 plt.figure(dpi=100)
                 plt.plot(t,u,label='Input Signal')
-                plt.plot(t,y, label='FOPTD Response')
-                plt.legend()
+                plt.plot(t,allY, label='FOPTD Response')
+                if self.inDim<3:
+                    plt.legend()
                 plt.show()
                 
             # Subsequently update the iterator to move down row
@@ -503,15 +523,15 @@ class Signal:
         return x_train,x_val,y_train,y_val,numDim
     
     
-    def SISO_validation(self):
+    def SISO_validation(self,KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10]):
         """This function makes it easier to run a bunch of simulations and 
         automatically return the validation and testing sets without 
         calling each function separately. """
         # Since no training is occurring, can skip separation of testing and validation sets
         self.trainFrac = 1
         
-        uArray,yArray,taus,kps,thetas,train,test = self.SISO_simulation(stdev=self.stdev)
-        xDatas = self.get_xData(uArray,yArray)
+        uArray,yArray,taus,kps,thetas,train,test = self.SISO_simulation(KpRange,tauRange,thetaRange)
+        xDatas = Signal.get_xData(uArray,yArray)
         yDatas = [taus, kps, thetas]
         
         self.xData ={};
@@ -534,7 +554,7 @@ class Signal:
         uArray=self.uArray; yArray=self.yArray
         a,b,c = np.shape(self.uArray)
         self.xDataMat = np.full((a*self.outDim,b,c),0.)
-        self.yDataMat = np.full((a*self.outDim,2),0.)
+        self.yDataMat = np.full((a*self.outDim,self.inDim),0.)
         if name=='kp':
             for j in range(0,self.inDim):
                 dim = self.inDim
@@ -551,7 +571,7 @@ class Signal:
             for i in range(0,self.outDim):
                 for j in range(0,self.inDim):
                     self.xDataMat[a*i:a*(i+1),:,j] = yArray[:,:,i] - uArray[:,:,j]
-        
+        print(self.xDataMat)
         return self.xDataMat,self.yDataMat
     
     
