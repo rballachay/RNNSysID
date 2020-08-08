@@ -7,6 +7,7 @@ Created on Tue Jun 30 17:32:17 2020
 """
 import os
 from os import path
+from pathlib import Path
 import pandas as pd
 import numpy as np
 import tensorflow as tf
@@ -74,7 +75,7 @@ class Model:
         self.modelDict = {}
         self.special_value = -99
         self.cwd = str(os.getcwd())
-        self.pd = str(self.cwd.parent)
+        self.pd = str(Path(os.getcwd()).parent)
     
     def load_SISO(self,sig):
         """Loads one of two first order models: probability or regular. Iterates 
