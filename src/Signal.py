@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import scipy.signal as signal
 from mpl_toolkits.mplot3d import Axes3D
 import control as control
+import time
 
 class Signal:
     """
@@ -98,6 +99,7 @@ class Signal:
         self.numPlots = numPlots
         self.stdev=stdev
         self.special_value=-99
+        self.startTime=time.time()
     
     
     def random_signal(self):
@@ -203,6 +205,19 @@ class Signal:
         xDatas = [yArray,yArray-uArray,thetaData]
         return xDatas
     
+    def serialized_checkpoint(self,iteration):
+        """Checkpoint which is called when 
+        .2 fraction of the way thru the data"""
+        try:
+            checkTime = float(time.time()) - self.Lasttime
+        except:
+            checkTime = float(time.time()) - self.startTime
+            
+        self.Lasttime = float(time.time())
+        checkpoint = int(100*iteration/self.numTrials)
+        print("Produced %i%% of the serialized data" %checkpoint)
+        print("Estimated Time Remaining: %.1f s\n" % (checkTime*(100-checkpoint)/20))
+    
     def SISO_simulation(self,KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10]):
         """
         Module which produces simulation of SISO system given the input parameters. 
@@ -236,6 +251,11 @@ class Signal:
         numTrials=self.numTrials; nstep=self.nstep;
         timelength=self.timelength; trainFrac=self.trainFrac
         
+        milestones = []
+        # Loop to create milestones to checkpoint data creation
+        for it in [2,4,6,8]:
+            milestones.append(int((it/10)*numTrials))
+        
         # Set the type of the simulation to inform the data split
         self.type = "SISO"
         
@@ -261,7 +281,11 @@ class Signal:
         
         # While loop which iterates over each of the parameter scenarios
         iterator=0
-        while(iterator<numTrials):
+        while(iterator<numTrials):   
+            # If some combination of 10% done running, checkpoint to console          
+            if iterator in milestones:
+                self.serialized_checkpoint(iterator)
+                
             # Randomize each index so they aren't linearly dependent 
             # on each other
             index = np.random.randint(0,nstep)
@@ -375,6 +399,11 @@ class Signal:
         timelength=self.timelength; trainFrac=self.trainFrac
         self.inDim = inDim; self.outDim = outDim
         
+        milestones = []
+        # Loop to create milestones to checkpoint data creation
+        for it in [2,4,6,8]:
+            milestones.append(int((it/10)*numTrials))
+            
         # Set the type of the simulation to inform the data split
         self.type = "MIMO"
         
@@ -396,6 +425,11 @@ class Signal:
         # to simulation arrays
         iterator=0
         while(iterator<numTrials):
+            # If some combination of 10% done running, checkpoint to console          
+            if iterator in milestones:
+                self.serialized_checkpoint(iterator)
+            
+            # Create first PRBS outside of loop
             u = self.PRBS(prob_switch=0.1/inDim)
             
             # Run a new PRBS for each input

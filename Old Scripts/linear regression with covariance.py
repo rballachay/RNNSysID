@@ -39,7 +39,7 @@ class MyThresholdCallback(tf.keras.callbacks.Callback):
         val_acc = logs["val_coeff_determination"]
         if val_acc >= self.threshold:
             self.model.stop_training = True
-            
+
 NUM_ITER = 10000
 LEN_ARRAY = 100
 

@@ -73,7 +73,8 @@ class Model:
         self.names = ["kp","tau","theta"]
         self.modelDict = {}
         self.special_value = -99
-    
+        self.cwd = str(os.getcwd())
+        self.pd = str(self.cwd.parent)
     
     def load_SISO(self,sig):
         """Loads one of two first order models: probability or regular. Iterates 
@@ -82,7 +83,7 @@ class Model:
         modelList = []
         
         if self.Modeltype=='probability':
-            loadDir = '/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/Integrated Models/SISO/Probability/'
+            loadDir = self.pd+'/Models/Integrated Models/SISO/Probability/'
             for filename in os.listdir(loadDir):
                 if filename=='.DS_Store':
                     continue
@@ -94,7 +95,7 @@ class Model:
                 model.compile(optimizer='adam', loss=negloglik,metrics=[self.coeff_determination])
                 modelList.append(model)
         else:
-            loadDir = '/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/Integrated Models/SISO/Regular/'
+            loadDir = self.pd+'/Models/Integrated Models/SISO/Regular/'
             for filename in os.listdir(loadDir):
                 if filename.endswith(".h5"):
                     name = loadDir +filename
@@ -116,7 +117,7 @@ class Model:
         over directory and loads alphabeticallyally. If more than 3 models exist in the 
         directory, it will load them indiscriminately."""
         modelList = []
-        loadDir = '/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/Integrated Models/MIMO/'
+        loadDir = self.pd+'/Models/Integrated Models/MIMO/'
             
         for filename in os.listdir(loadDir):
             if filename=='.DS_Store':
@@ -184,7 +185,7 @@ class Model:
         
         # If the loss and accuracy plots are gonna be saved, saveModel must = True
         if saveModel:
-            parentDir = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/"
+            parentDir = self.pd+"/Models/"
             time = str(datetime.datetime.now())[:16]
             plotDir = parentDir + time + '/'
             checkptDir = plotDir + 'Checkpoints/'
@@ -337,7 +338,7 @@ class Model:
         
         # If the loss and accuracy plots are gonna be saved, saveModel must = True
         if saveModel:
-            parentDir = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/"
+            parentDir = self.pd+"/Models/"
             time = str(datetime.datetime.now())[:16]
             plotDir = parentDir + time + '/'
             checkptDir = plotDir + 'Checkpoints/'
@@ -562,7 +563,7 @@ class Model:
                 plt.legend()
            
             if savePredict:
-                savePath = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Predictions/SISO/" + str(i) + ".png"
+                savePath = self.pd+"/Predictions/SISO/" + str(i) + ".png"
                 plt.savefig(savePath)       
     
     def predict_MIMO(self,sig,plotPredict=True,savePredict=False,probabilityCall=False):
@@ -684,7 +685,7 @@ class Model:
                 plt.legend()
            
             if savePredict and k<10:
-                savePath = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Predictions/MIMO/" + str(k) + ".png"
+                savePath = self.pd+"/Predictions/MIMO/" + str(k) + ".png"
                 plt.savefig(savePath)
                 
     def coeff_determination(self,y_true, y_pred):
@@ -1009,7 +1010,7 @@ class Probability:
         else:
             suffix = '_error_' + str(self.maxError) + '_nTrials_' + str(numTrials)
         
-        self.prefix = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Uncertainty/"
+        self.prefix = self.pd+"/Uncertainty/"
         if self.type=="SISO":
             self.errorCSV = self.prefix+"SISO/Data/propData"+suffix+".csv"
             self.SISO_probability_estimate()

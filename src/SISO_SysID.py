@@ -5,6 +5,7 @@ Created on Wed Jun 17 14:50:26 2020
 
 @author: RileyBallachay
 """
+
 from Signal import Signal
 from Model import Model
 # These constants are also defined in the Signal module 
