@@ -330,7 +330,6 @@ class Model:
             Decide whether or not to save the models from training 
         """
         parameters = ['kp','tau','theta']
-        #parameters = ['tau']
         
         # You have to construct a signal with all the necessary parameters before 
         if not(sig):

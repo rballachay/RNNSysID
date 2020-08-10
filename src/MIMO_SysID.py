@@ -11,7 +11,7 @@ import time
 
 # These constants are also defined in the Signal module 
 # Don't change here unless you also change them there
-numTrials = 100
+numTrials = 100000
 nstep = 1000
 timelength = 1000
 trainFrac = .7
