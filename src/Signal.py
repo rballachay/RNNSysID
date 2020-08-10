@@ -149,6 +149,32 @@ class Signal:
                 gbn[i] = min_Range
         gbn=gbn.reshape((len(gbn),1))
         return gbn
+    
+    def PRBS_serial(self, Range=[-1.0, 1.0]):
+        """Returns a pseudo-random binary sequence 
+        which ranges between -1 and +1"""
+        prob_switch=0.4/self.inDim
+        min_Range = min(Range)
+        max_Range = max(Range)
+        gbnfull = np.ones((self.nstep,int(self.numTrials*self.inDim)))
+        for it in range(int(self.numTrials*self.inDim)):
+            gbn = np.ones((self.nstep,1))
+            gbn = gbn*random.choice([-1,1])
+            for i in range(0,(self.nstep - 4),4):
+                prob = np.random.random()
+                gbn[i + 1:i+5] = gbn[i]
+                if prob < prob_switch:
+                    gbn[i + 1:i+5] = -gbn[i + 1:i+5]
+            for i in range(self.nstep):
+                if gbn[i] > 0.:
+                    gbn[i] = max_Range
+                else:
+                    gbn[i] = min_Range
+            gbn=gbn.reshape((len(gbn),1))
+            gbnfull[:,it] = gbn[:,0]
+        
+        gbnfull = gbnfull.reshape((self.nstep,self.numTrials,self.inDim))
+        return gbnfull
  
     def plot_parameter_space(self,x,y,trainID,valID,z=False):
         """This function plots the parameter space for a first 
@@ -423,24 +449,15 @@ class Signal:
         
         # Iterate over each of the simulations and add
         # to simulation arrays
+        uArray = self.PRBS_serial()
+        
         iterator=0
         while(iterator<numTrials):
             # If some combination of 10% done running, checkpoint to console          
             if iterator in milestones:
                 self.serialized_checkpoint(iterator)
             
-            # Create first PRBS outside of loop
-            u = self.PRBS(prob_switch=0.1/inDim)
-            
-            # Run a new PRBS for each input
-            # variable and stack in input
-            for i in range(1,inDim):
-                prbs = self.PRBS(prob_switch=0.1/inDim)
-                u = np.concatenate((u,prbs),axis=1)
-            
-            uArray[iterator,:,:] = u
-            nums = []
-            dens = []
+            u=uArray[:,iterator:(iterator+1),:].reshape((self.nstep,self.inDim))
             
             # The transfer function from the 2nd input to the 1st output is
             # (3s + 4) / (6s^2 + 5s + 4).
@@ -466,8 +483,6 @@ class Signal:
                     denTemp.append([taupSpace[index2],1.])
                     thetaArray[iterator,(self.outDim*j)+i] = thetaSpace[index3]
                     thetas.append(thetaSpace[index3])
-                #nums.append(numTemp)
-                #dens.append(denTemp)
                 
                 bigU=np.transpose(u)
                 uSim=np.zeros_like(bigU)
@@ -482,7 +497,6 @@ class Signal:
                     allY = y
                 else:
                     allY = np.concatenate((allY,y),axis=1)
-                    
             
               
             # Use transfer function class to simulate system response
@@ -497,8 +511,8 @@ class Signal:
             # Only plot every 100 input signals
             if (iterator)<self.numPlots:
                 plt.figure(dpi=100)
-                plt.plot(t,u,label='Input Signal')
-                plt.plot(t,allY, label='FOPTD Response')
+                plt.plot(t[:100],u[:100],label='Input Signal')
+                plt.plot(t[:100],allY[:100], label='FOPTD Response')
                 if self.inDim<3:
                     plt.legend()
                 plt.show()

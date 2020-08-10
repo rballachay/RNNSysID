@@ -365,8 +365,10 @@ class Model:
                 # if predicting tau or theta
                 if parameter=='kp':
                     model = self.__MIMO_kp(x_train,y_train)
-                else:
+                elif parameter=='tau':
                     model = self.__MIMO_tau(x_train,y_train)
+                else:
+                    model = self.__MIMO_theta(x_train,y_train)
             elif sig.inDim==10 and sig.outDim==10:
                 if parameter=='kp':
                     model = self.__MIMO10_kp(x_train,y_train)
@@ -726,7 +728,7 @@ class Model:
         "Probabilistic model for SISO data"
         negloglik = lambda y, rv_y: -rv_y.log_prob(y[:])
         model = tf.keras.Sequential([
-        tf.keras.layers.GRU(400, activation='tanh',input_shape=(width,height)),
+        tf.keras.layers.GRU(500, activation='tanh',input_shape=(width,height)),
         tf.keras.layers.Dense(20,activation='linear'),
         tfp.layers.DenseVariational(4,Model.posterior_mean_field,Model.prior_trainable,activation='linear',kl_weight=1/x_train.shape[0]),
         tfp.layers.DistributionLambda(lambda t: tfd.Normal(loc=[t[..., :2],t[..., :2]],
@@ -740,8 +742,8 @@ class Model:
         "Probabilistic model for SISO data"
         negloglik = lambda y, rv_y: -rv_y.log_prob(y[:])
         model = tf.keras.Sequential([
-        tf.keras.layers.GRU(100, activation='tanh',input_shape=(width,height)),
-        tf.keras.layers.Dense(20,activation='linear'),
+        tf.keras.layers.GRU(400, activation='tanh',input_shape=(width,height)),
+        tf.keras.layers.Dense(200,activation='linear'),
         tfp.layers.DenseVariational(4,Model.posterior_mean_field,Model.prior_trainable,activation='linear',kl_weight=1/x_train.shape[0]),
         tfp.layers.DistributionLambda(lambda t: tfd.Normal(loc=[t[..., :2],t[..., :2]],
         scale=[1e-3 + tf.math.softplus(0.1 * t[...,2:]),1e-3 + tf.math.softplus(0.1 * t[...,2:])])),])

@@ -24,6 +24,7 @@ import datetime
 import control as control
 import random
 import math
+from multiprocessing import Pool
 
 class MyThresholdCallback(tf.keras.callbacks.Callback):
     """
@@ -39,6 +40,9 @@ class MyThresholdCallback(tf.keras.callbacks.Callback):
         val_acc = logs["val_coeff_determination"]
         if val_acc >= self.threshold:
             self.model.stop_training = True
+
+
+pool= Pool()
 
 NUM_ITER = 10000
 LEN_ARRAY = 100
