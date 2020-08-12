@@ -17,6 +17,7 @@ import tensorflow_probability as tfp
 tfd = tfp.distributions
 tfb = tfp.bijectors
 from sklearn.metrics import r2_score
+from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 from Signal import Signal
 from tensorflow.keras import backend as K
@@ -199,6 +200,7 @@ class Model:
         for j in range(0,len(xDatas)):
             xData = xDatas[j]
             yData = yDatas[j]   
+            
             x_train,x_val,y_train,y_val,numDim = sig.preprocess(xData,yData)
             
             if probabilistic:
@@ -222,7 +224,7 @@ class Model:
             
             # Section for including callbacks (custom and checkpoint)
             checkpoint_path = checkptDir + self.names[j] + '.cptk'
-            MTC = MyThresholdCallback(0.95)
+            MTC = MyThresholdCallback(0.99)
             cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,save_weights_only=True,save_best_only=True,verbose=1)
             
             print("Fit model on training data")
@@ -249,6 +251,12 @@ class Model:
                     modelpath = plotDir+self.names[j]+probModel+"_"+str(fileOverwriter)+extension
                     fileOverwriter+=1
                 model.save(modelpath)
+            
+            # Save the training and validation loss to a text file
+            numpy_loss_history = np.array(history.history['loss'])
+            numpy_val_history = np.array(history.history['val_loss'])
+            np.savetxt(plotDir+self.names[j]+'_loss.txt', numpy_loss_history, delimiter=",")
+            np.savetxt(plotDir+self.names[j]+'_val_loss.txt', numpy_val_history, delimiter=",")
             
             # Plot the learning curves for each parameter
             if plotLoss:
@@ -295,7 +303,7 @@ class Model:
         return 
     
     
-    def train_MIMO(self,sig=False,plotLoss=True,plotVal=True,epochs=50,saveModel=True):
+    def train_MIMO(self,sig=False,plotLoss=True,plotVal=True,epochs=50,saveModel=True,checkpoint=False):
         """
         Takes Signal object with input and output data, separates data in training
         and validation sets, transform data for neural network and uses training 
@@ -351,7 +359,7 @@ class Model:
         
         # Iterate over tau and kp parameters
         for (k,parameter) in enumerate(parameters):
-            if k==0:
+            if k==1 or k==0:
                 continue
             xData,yData = sig.stretch_MIMO(parameter)
             x_train,x_val,y_train,y_val,numDim = sig.preprocess(xData,yData)
@@ -364,10 +372,19 @@ class Model:
                 # if predicting tau or theta
                 if parameter=='kp':
                     model = self.__MIMO_kp(x_train,y_train)
+                    if checkpoint:
+                        pth = "/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/2020-08-10 21:06/Checkpoints/kp.cptk"
+                        model.load_weights(pth)
                 elif parameter=='tau':
                     model = self.__MIMO_tau(x_train,y_train)
+                    if checkpoint:
+                        pth = "/Users/RileyBallachay/Downloads/Checkpoints/tau.cptk"
+                        model.load_weights(pth)
                 else:
                     model = self.__MIMO_theta(x_train,y_train)
+                    if checkpoint:
+                        pth='/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/2020-08-10 21:06/Checkpoints/theta.cptk'
+                        model.load_weights(pth)
             elif sig.inDim==10 and sig.outDim==10:
                 if parameter=='kp':
                     model = self.__MIMO10_kp(x_train,y_train)
@@ -741,8 +758,8 @@ class Model:
         "Probabilistic model for SISO data"
         negloglik = lambda y, rv_y: -rv_y.log_prob(y[:])
         model = tf.keras.Sequential([
-        tf.keras.layers.GRU(400, activation='tanh',input_shape=(width,height)),
-        tf.keras.layers.Dense(200,activation='linear'),
+        tf.keras.layers.GRU(500, activation='tanh',input_shape=(width,height)),
+        tf.keras.layers.Dense(20,activation='linear'),
         tfp.layers.DenseVariational(4,Model.posterior_mean_field,Model.prior_trainable,activation='linear',kl_weight=1/x_train.shape[0]),
         tfp.layers.DistributionLambda(lambda t: tfd.Normal(loc=[t[..., :2],t[..., :2]],
         scale=[1e-3 + tf.math.softplus(0.1 * t[...,2:]),1e-3 + tf.math.softplus(0.1 * t[...,2:])])),])

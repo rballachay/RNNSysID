@@ -10,7 +10,7 @@ from Signal import Signal
 from Model import Model
 # These constants are also defined in the Signal module 
 # Don't change here unless you also change them there
-numTrials = 100
+numTrials = 10000
 nstep = 100
 timelength = 100
 trainFrac = .7
@@ -19,8 +19,7 @@ trainFrac = .7
 # then simulates using the initialized model
 sig = Signal(numTrials,nstep,timelength,trainFrac,stdev=5)
 
-
-sig.SISO_simulation(KpRange=[0.75,10.5],tauRange=[0.75,10.5])
+sig.SISO_simulation(KpRange=[1,10],tauRange=[1,10])
 
 
 # These two lines are for training the model based on nstep and the sig data

@@ -17,7 +17,7 @@ timelength = 1000
 trainFrac = .7
 
 start_time = time.time()
- 
+
 sig = Signal(numTrials,nstep,timelength,trainFrac,stdev=5)
 
 uArray,yArray,tauArray,KpArray,train,test = sig.MIMO_simulation()
@@ -27,7 +27,7 @@ print("--- %s seconds ---" % (time.time() - start_time))
 # These two lines are for training the model based on nstep and the sig data
 # Only uncomment if you want to train and not predict
 trainModel = Model(nstep)
-trainModel.train_MIMO(sig,epochs=100)
+trainModel.train_MIMO(sig,epochs=100,checkpoint=True)
 print("--- %s seconds ---" % (time.time() - start_time))
 
 '''
