@@ -9,10 +9,10 @@ from scipy.signal import max_len_seq
 import matplotlib.pyplot as plt
 import numpy as np
 import random
+import time
+import control
 
-sig,_ = max_len_seq(12,length=1000)
-
-plt.plot(sig[:100])
+start = time.time()
 
 def PRBS(emptyArg,nstep=100,prob_switch=0.3, Range=[-1.0, 1.0]):  
     """Returns a pseudo-random binary sequence 
@@ -28,5 +28,14 @@ def PRBS(emptyArg,nstep=100,prob_switch=0.3, Range=[-1.0, 1.0]):
     gbn=gbn.reshape((len(gbn),1))
     return gbn
     
-rang=np.zeros(100)
-uArray =list(map(PRBS,rang))
+rang=np.zeros(1000)
+uArray =np.array(list(map(PRBS,rang)))[...,-1]
+
+def fun(iterator):
+    sys = control.tf([np.random.randint(10),],[np.random.randint(10),1.])
+    _,yEnd,_ = control.forced_response(sys,U=uArray[iterator,:],T=np.linspace(0,100,100))
+    return yEnd
+
+yArray = np.array(list(map(fun,range(1000))))
+    
+print(str(time.time()-start))

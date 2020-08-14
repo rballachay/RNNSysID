@@ -92,44 +92,22 @@ class Signal:
     
     """
     
-    def __init__(self,numTrials=100,nstep=100,timelength=100,trainFrac=0.7,numPlots=5,stdev=5):
+    def __init__(self,inDim,outDim,numTrials,trainFrac=0.7,numPlots=5,stdev=5):
         self.numTrials = numTrials
-        self.nstep = nstep
-        self.timelength = timelength
+        if inDim==1:
+            self.nstep = 100
+        else:
+            self.nstep = 500*inDim
+
+        self.timelength = self.nstep
         self.trainFrac = trainFrac
         self.valFrac = 1-trainFrac
         self.numPlots = numPlots
         self.stdev=stdev
         self.special_value=-99
         self.startTime=time.time()
-    
-    
-    def random_signal(self):
-        """Module that simulates a wave function with 
-        random frequency and amplitude within the specified range"""
-        y = np.random.rand(self.nstep)
-        y[:10] = 0
-        y[-10:] = 0     
-        windowlength = np.random.randint(5,20)
-        win = signal.hann(windowlength)-0.5
-        filtered = signal.convolve(y, win, mode='same') / sum(win)
-        return filtered
-    
-    def PRSS(self,length,prob_switch=0.5):
-        gbn = np.ones(length)
-        gbn = gbn*random.choice([-1,1])
-        magnitude = np.ones(length)
-        for i in range(0,length-5,5):
-            # For changing sign
-            prob=np.random.random()
-            gbn[i:i+5] = gbn[i]
-            magnitude[i:i+5] = magnitude[i]
-            if prob<prob_switch:
-                mag = random.choice([-0.5,-1,-2,0.5,1,2])
-                gbn[i:i+5] = gbn[i:i+5] + mag
-                
-        gbn=gbn*magnitude
-        return np.array(gbn)
+        self.inDim = inDim
+        self.outDim = outDim
     
     def PRBS(self,emptyArg, prob_switch=0.1, Range=[-1.0, 1.0]):  
         """Returns a pseudo-random binary sequence 
@@ -145,28 +123,21 @@ class Signal:
         gbn=gbn.reshape((len(gbn),1))
         return gbn
  
-    def plot_parameter_space(self,x,y,trainID,valID,z=False):
+    def plot_parameter_space(self,x,y,z,trainID,valID):
         """This function plots the parameter space for a first 
         order plus time delay model in 3D coordinates"""
-        if z:
-            x=np.array(x); y=np.array(y); z=np.array(z)
-            figgy = plt.figure(dpi=200)
-            ax = Axes3D(figgy)
-            xT = x[trainID]; xV = x[valID] 
-            yT = y[trainID]; yV = y[valID]
-            zT = z[trainID]; zV = z[valID]
-            ax.scatter(xT,yT,zT,c='g',label="Training Data")
-            ax.scatter(xV,yV,zV,c='purple',label="Validation Data")
-            ax.set_xlabel("τ (Time Constant)")
-            ax.set_ylabel("Kp (Gain)")
-            ax.set_zlabel("θ (Delay)")
-            ax.legend()
-        else:
-            x = np.array(x.ravel()); y = np.array(y.ravel())
-            plt.figure(dpi=200)
-            plt.plot(x,y,'.b')
-            plt.ylabel("τ (Time Constant)")
-            plt.xlabel("Kp (Gain)")
+        x=np.array(x); y=np.array(y); z=np.array(z)
+        figgy = plt.figure(dpi=200)
+        ax = Axes3D(figgy)
+        xT = x[trainID]; xV = x[valID] 
+        yT = y[trainID]; yV = y[valID]
+        zT = z[trainID]; zV = z[valID]
+        ax.scatter(xT,yT,zT,c='g',label="Training Data")
+        ax.scatter(xV,yV,zV,c='purple',label="Validation Data")
+        ax.set_xlabel("Ï„ (Time Constant)")
+        ax.set_ylabel("Kp (Gain)")
+        ax.set_zlabel("Î¸ (Delay)")
+        ax.legend()
     
     def gauss_noise(self,array,stdev):
         """Generate gaussian noise with mean and standard deviation
@@ -175,22 +146,6 @@ class Signal:
         # Otherwise, it will evaluate the length of 1D array
         noise = np.random.normal(0,(stdev/100)*np.amax(array),array.shape)
         return array+noise
-    
-    def get_xData(uArray,yArray):
-        """ Need an isolated and mutable method for 
-        preprocessing SISO xData that can be updated and 
-        used to preprocess training and prediction data"""
-        def preprocess_theta(ySlice):
-            amax = np.amax(abs(ySlice))
-            ySlice = ySlice/amax
-            return ySlice
-        
-        
-        thetaData1 = np.apply_along_axis(preprocess_theta, 1, yArray)
-        thetaData2 = np.apply_along_axis(preprocess_theta, 1, uArray)
-        thetaData = thetaData1-thetaData2
-        xDatas = [yArray,yArray-uArray,thetaData]
-        return xDatas
     
     def serialized_checkpoint(self,iteration):
         """Checkpoint which is called when 
@@ -204,132 +159,8 @@ class Signal:
         checkpoint = int(100*iteration/self.numTrials)
         print("Produced %i%% of the serialized data" %checkpoint)
         print("Estimated Time Remaining: %.1f s\n" % (checkTime*(100-checkpoint)/20))
-        
+    
     def y_map_function(self,iterator):
-        """ Map function to increase the speed of 
-        producing y data. Only for SISO simulations"""
-        if iterator in self.milestones:
-                self.serialized_checkpoint(iterator)
-        
-        # Generate random signal using
-        u = self.uArray[iterator,:]
-        
-        # Subtract time delay and get the 'simulated time' which has
-        # no physical significance. Fill the delay with zeros and
-        # start signal after delay is elapsed
-        uInclude = np.concatenate((np.zeros(self.thetas[iterator]),u[:-self.thetas[iterator]]))
-        
-        # Use transfer function module from control to simulate 
-        # system response after delay then add to zeros
-        sys = control.tf([self.kps[iterator],],[self.taus[iterator],1.])
-        _,yEnd,_ = control.forced_response(sys,U=uInclude,T=self.t)
-        y = self.gauss_noise(yEnd,self.stdev)
-        return y
-    
-    def SISO_simulation(self,KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10]):
-        """
-        Module which produces simulation of SISO system given the input parameters. 
-        Contains a loop which iterates for the total number of samples and appends
-        to an array. 
-        
-        Uses pseudo-random binary signal with amplitude in [-1,1] and linear first 
-        order plus dead time system, modelled using transfer function class in
-        the Control package to simulate the linear system.
-        
-        Purpose is to produce simulated system responses with varying quantities 
-        of noise to simulate real linear system responses in order to train and
-        validate models built with the Model class.
-        
-        Parameters
-        ----------
-        KpRange : tuple, default=(1,10)
-            Possible range for gains. An equally spaced array between the maximum 
-            and minimum are chosen based on the number of simulations.
-        
-        tauRange : tuple, default=(1,10)
-            Possible range for time constant. An equally spaced array between the 
-            maximum and minimum are chosen based on the number of simulations.
-         
-        thetaRange : tuple, default=(1,10)
-            Possible range for time delays. An equally spaced array between the 
-            maximum and minimum are chosen based on the number of simulations.
-            
-        """
-        # Access all the attributes from initialization
-        numTrials=self.numTrials; nstep=self.nstep;
-        timelength=self.timelength; trainFrac=self.trainFrac
-        
-        self.milestones = []
-        # Loop to create milestones to checkpoint data creation
-        for it in [2,4,6,8]:
-           self.milestones.append(int((it/10)*numTrials))
-        
-        # Set the type of the simulation to inform the data split
-        self.type = "SISO"
-        
-        # Make arrays containing parameters tau, theta
-        KpSpace = np.linspace(KpRange[0],KpRange[1],nstep)
-        taupSpace = np.linspace(tauRange[0],tauRange[1],nstep)
-        thetaSpace = np.arange(thetaRange[0],thetaRange[1])
-        
-        # Zeros are insoluble
-        KpSpace[KpSpace==0] = 0.01
-        taupSpace[taupSpace==0] = 0.01
-        thetaSpace[thetaSpace==0] = 0.01
-        
-        # Array of random number to select parameters from
-        kpRand = np.random.randint(0,high=nstep,size=numTrials)
-        tauRand = np.random.randint(0,high=nstep,size=numTrials)
-        thetaRand = np.random.randint(0,high=9,size=numTrials)
-        
-        # Select parameters in vectorized form
-        self.kps = [KpSpace[i] for i in kpRand]
-        self.taus = [taupSpace[i] for i in tauRand]
-        self.thetas = [thetaSpace[i] for i in thetaRand]
-        
-        # Only need to define t array once
-        self.t = np.linspace(0,nstep,nstep)
-        
-        # Make uArray
-        emptyArg = np.zeros(numTrials)
-        self.uArray = np.array(list(map(self.PRBS,emptyArg)))[...,0]
-
-        # While loop which iterates over each of the parameter scenarios
-        iterator=range(0,self.numTrials)
-        self.yArray =np.array(list(map(self.y_map_function,iterator)))
-        
-        
-        for trial in range(self.numPlots):
-            # Only plot first 10 trials
-            plt.figure(dpi=200)
-            plt.plot(self.t,self.uArray[trial,:],'k',label='u(t)')
-            plt.plot(self.t,self.yArray[trial,:],'r--', label='y(t)')
-            plt.xlabel('Time (s)')
-            plt.ylabel('Measured Value')
-            plt.legend()
-            plt.show()
-
-        # Randomly select train and test indices from sample data. 
-        # If the prediction module is used, trainFrac will default 
-        # to one and this portion will be skipped
-        index = range(0,len(self.yArray))
-        if self.trainFrac!=1:  
-            train = np.sort(random.sample(index,int(trainFrac*numTrials)))
-            test = np.sort(np.array([item for item in list(index) if item not in train]))
-        else:
-            train=index
-            test=[]
-        
-        # Make it so that any of these attributes can be accessed 
-        # without needing to return them all from the function
-        self.plot_parameter_space(self.taus,self.kps,train,test,self.thetas)
-        self.train = train
-        self.test = test
-        self.numTrials = numTrials
-        
-        return self.uArray,self.yArray,self.taus,self.kps,self.thetas,self.train,self.test
-    
-    def y_map_MIMO(self,iterator):
         # If some combination of 20% done running, checkpoint to console          
         if iterator in self.milestones:
             self.serialized_checkpoint(iterator)
@@ -361,9 +192,9 @@ class Signal:
             
         return allY
     
-    def MIMO_simulation(self,stdev=5,inDim=2,outDim=2,KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10]):
+    def sys_simulation(self,stdev=5,KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10]):
         """
-        Module which produces simulation of MIMO system given the input parameters. 
+        Module which produces simulation of SISO/MIMO system given the input parameters. 
         Contains a loop which iterates for the total number of samples and appends
         to an array. 
         
@@ -400,7 +231,6 @@ class Signal:
         # Access all the attributes from initialization
         numTrials=self.numTrials; nstep=self.nstep;
         timelength=self.timelength; trainFrac=self.trainFrac
-        self.inDim = inDim; self.outDim = outDim
         
         self.milestones = []
         # Loop to create milestones to checkpoint data creation
@@ -411,11 +241,6 @@ class Signal:
         self.type = "MIMO"
         
         # Initialize the arrays which will store the simulation data
-        uArray = np.full((numTrials,nstep,inDim),0.)
-        yArray = np.full((numTrials,nstep,outDim),0.)
-        KpArray = np.full((numTrials,outDim*inDim),0.)
-        tauArray = np.full((numTrials,outDim*inDim),0.)
-        thetaArray = np.full((numTrials,outDim*inDim),0.)
         orderList = []
         
         # Make arrays containing parameters tau, theta
@@ -437,15 +262,16 @@ class Signal:
         # Make uArray for all data
         # Make uArray
         emptyArg = np.zeros(numTrials*self.inDim)
-        self.uArray = np.concatenate(np.split(np.array(list(map(self.PRBS,emptyArg))),2),axis=2)  
+        self.uArray = np.concatenate(np.split(np.array(list(map(self.PRBS,emptyArg))),self.inDim),axis=2)  
         
         # Iterate over each of the simulations and add
         # to simulation arrays
         iterator=range(numTrials)
-        self.yArray = np.array(list(map(self.y_map_MIMO,iterator)))
-
+        self.yArray = np.array(list(map(self.y_map_function,iterator)))
+        print(self.yArray.shape)
         # Colors for plotting input/output signals properly
-        colors = ['k','gray','b','r']
+        colors = ['k','gray','crimson','r','olive','navy','darkmagenta','indigo','saddlebrown',
+                  'coral','darkorange','cyan']
         
         # Only plot every 100 input signals
         for outit in range(self.numPlots):
@@ -454,17 +280,17 @@ class Signal:
                 label1 = '$u_' + str(it+1) + '(t)$'
                 label2 = '$y_' + str(it+1) + '(t)$'
                 plt.plot(self.t[:500],self.uArray[outit,:500,it],colors[it],label=label1)
-                plt.plot(self.t[:500],self.yArray[outit,:500,it],colors[2+it],label=label2)
+                plt.plot(self.t[:500],self.yArray[outit,:500,it],colors[self.inDim+it],label=label2)
             plt.legend()
             plt.show()
         
         # Randomly pick training and validation indices 
-        index = range(0,len(yArray))
+        index = range(0,len(self.yArray))
         if self.trainFrac!=1:  
             train = random.sample(index,int(trainFrac*numTrials))
             test = [item for item in list(index) if item not in train]
         else:
-            train=range(0,len(yArray))
+            train=range(0,len(self.yArray))
             test=[]
         
         # Make it so that any of these attributes can be accessed 
@@ -475,7 +301,8 @@ class Signal:
         self.orderList = orderList
         self.train = train
         self.test = test
-        self.plot_parameter_space(self.tauArray,self.KpArray,train,test)
+        if self.numPlots>0:
+            self.plot_parameter_space(self.tauArray,self.KpArray,self.thetaArray,train,test)
         
         return self.uArray,self.yArray,self.tauArray,self.KpArray,train,test
      
@@ -498,48 +325,22 @@ class Signal:
         x_train= trainspace.reshape((math.floor(self.numTrials*self.trainFrac),self.nstep,numDim))    
         x_val = valspace.reshape((math.floor(self.numTrials*(1-self.trainFrac)),self.nstep,numDim))
         
-        if self.type=="MIMO":
+        try:
             y_val = np.array([yData[i,:] for i in self.test])
             y_train = np.array([yData[i,:] for i in self.train])
-        else:
+        except:
             y_val = np.array([yData[i] for i in self.test])
             y_train = np.array([yData[i] for i in self.train])
             
-        return x_train,x_val,y_train,y_val,numDim
-    
-    
-    def SISO_validation(self,KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10]):
-        """This function makes it easier to run a bunch of simulations and 
-        automatically return the validation and testing sets without 
-        calling each function separately. """
-        # Since no training is occurring, can skip separation of testing and validation sets
-        self.trainFrac = 1
-        
-        uArray,yArray,taus,kps,thetas,train,test = self.SISO_simulation(KpRange,tauRange,thetaRange)
-        xDatas = Signal.get_xData(uArray,yArray)
-        yDatas = [taus, kps, thetas]
-        
-        self.xData ={};
-        self.yData={}
-        self.names = ["kp","tau","theta"]
-        
-        for (i,name) in enumerate(self.names):
-            x,_,y,_,_ = self.preprocess(xDatas[i],yDatas[i])
-            self.xData[name] = x
-            self.yData[name] = y
-        
-        return self.xData,self.yData
-    
+        return x_train,x_val,y_train,y_val,numDim   
     
     def stretch_MIMO(self,name):
         """Function that takes the input parameters and stacks into one 
         array, then processes so that data can be used for any size
-        MIMO system. Hasn't been validated on greater that 2x2"""
+        MIMO system. Not used if SISO system"""
         kps=self.kps; taus=self.taus; thetas=self.thetas
         uArray=self.uArray; yArray=self.yArray
         a,b,c = np.shape(self.uArray)
-        print(uArray.shape)
-        print(kps.shape)
         self.xDataMat = np.full((a*self.outDim,b,c),0.)
         self.yDataMat = np.full((a*self.outDim,self.inDim),0.)
         if name=='kp':
@@ -549,8 +350,7 @@ class Signal:
             
             for i in range(0,self.outDim):
                 for j in range(0,self.inDim):
-                    self.xDataMat[a*i:a*(i+1),:,j] = yArray[:,:,i]
-                    
+                    self.xDataMat[a*i:a*(i+1),:,j] = yArray[:,:,i]          
         elif name=='tau':
             for j in range(0,self.inDim):
                 dim = self.inDim
@@ -571,7 +371,7 @@ class Signal:
         return self.xDataMat,self.yDataMat
     
     
-    def MIMO_validation(self):
+    def system_validation(self):
         """This function makes it easier to run a bunch of simulations and 
         automatically return the validation and testing sets without 
         calling each function separately. """

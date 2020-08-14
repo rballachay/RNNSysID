@@ -10,7 +10,7 @@ from Signal import Signal
 from Model import Model
 # These constants are also defined in the Signal module 
 # Don't change here unless you also change them there
-numTrials = 10000
+numTrials = 100
 nstep = 100
 timelength = 100
 trainFrac = .7

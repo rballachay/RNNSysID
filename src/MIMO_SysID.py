@@ -11,7 +11,7 @@ import time
 
 # These constants are also defined in the Signal module 
 # Don't change here unless you also change them there
-numTrials = 100000
+numTrials = 100
 nstep = 1000
 timelength = 1000
 trainFrac = .7
@@ -20,7 +20,7 @@ start_time = time.time()
 
 sig = Signal(numTrials,nstep,timelength,trainFrac,stdev=5)
 
-uArray,yArray,tauArray,KpArray,train,test = sig.MIMO_simulation()
+uArray,yArray,tauArray,KpArray,train,test = sig.MIMO_simulation(inDim=1,outDim=1)
 print("--- %s seconds ---" % (time.time() - start_time))
 
 
