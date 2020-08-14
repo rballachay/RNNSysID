@@ -516,8 +516,8 @@ class Model:
         tf.keras.layers.Dense(int(self.inDim*10),activation='linear'),
         tfp.layers.DenseVariational(int(self.inDim*2),Model.posterior_mean_field,Model.prior_trainable,activation='linear',kl_weight=1/x_train.shape[0]),
         tfp.layers.DistributionLambda(lambda t: tfd.Normal(
-        loc = [t[..., :self.inDim] for i in range(self.inDim)],
-        scale = [1e-3 + tf.math.softplus(0.1 * t[...,self.inDim:]) for i in range(self.inDim)],)),])
+        loc = [t[..., :self.inDim] for i in range(self.inDim)][0],
+        scale = [1e-3 + tf.math.softplus(0.1 * t[...,self.inDim:]) for i in range(self.inDim)][0],)),])
         model.compile(optimizer='adam', loss=negloglik,metrics=[self.coeff_determination])
         return model
     
