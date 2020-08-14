@@ -30,7 +30,7 @@ for (inDimension,outDimension) in zip(inDims,outDims):
     # These two lines are for training the model based on nstep and the sig data
     # Only uncomment if you want to train and not predict
     trainModel = Model()
-    trainModel.train_model(sig,epochs=10,batchSize=batchSize,saveModel=False,plotLoss=bool(plots!=0),plotVal=bool(plots!=0))
+    trainModel.train_model(sig,epochs=100,batchSize=batchSize,saveModel=False,plotLoss=bool(plots!=0),plotVal=bool(plots!=0))
     print("--- %s seconds ---" % (time.time() - start_time))
 
 '''
