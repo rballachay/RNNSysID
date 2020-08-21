@@ -71,43 +71,51 @@ class Model:
     
     """
 
-    def __init__(self,nstep=100,Modeltype='probability'):   
+    def __init__(self,Modeltype='probability',sig=False):   
         self.Modeltype = Modeltype
-        self.nstep=nstep
         self.names = ["kp","tau","theta"]
         self.modelDict = {}
         self.special_value = -99
         self.cwd = str(os.getcwd())
         self.pd = str(Path(os.getcwd()).parent)
     
-    def load_Model(self,sig):
+    def load_model(self,sig,directory=False,check=False):
         """Loads one of two first order models: probability or regular. Iterates 
         over directory and loads alphabetically. If more than 3 models exist in the 
         directory, it will load them indiscriminately."""
         modelList = []
-        loadDir =  askdirectory(title='Select Folder With Trained Model')
-        for filename in os.listdir(loadDir):
+        self.inDim = sig.inDim; self.outDim = sig.outDim
+        if not(directory):
+            loadDir =  askdirectory(title='Select Folder With Trained Model')
+        else:
+            loadDir = directory
+            
+        models = ['kp.cptk','tau.cptk','theta.cptk']
+        for filename in models:
             if filename=='.DS_Store':
                 continue
             print(filename)
-            negloglik = lambda y, rv_y: -rv_y.log_prob(y[:])
-            losses.custom_loss = negloglik
-            dependencies = {'coeff_determination': self.coeff_determination,'loss':negloglik}
-            model = tf.keras.models.load_model(loadDir+filename, custom_objects=dependencies,compile = False)
-            model.compile(optimizer='adam', loss=negloglik,metrics=[self.coeff_determination])
+            
+            if not(check):
+                model = self.mutable_model(sig.xData['kp'],sig.yData['kp'])
+            else:
+                model = self.mutable_model(self.x_train,self.y_train)
+                
+            model.load_weights(loadDir+filename)
             modelList.append(model)
         for i in range(0,3):
             self.modelDict[self.names[i]] = modelList[i]
      
         
-    def load_and_train(self,sig,epochs=50,probabilistic=True,saveModel=True):
+    def load_and_train(self,sig,epochs=50,probabilistic=True,saveModel=True,batchSize=16,plotLoss=False,plotVal=False):
         """Calls load_SISO and continues training model, saving the updated 
         model to a new folder to avoid overwriting"""
-        self.train_SISO(sig,newModel=False,probabilistic=probabilistic,saveModel=saveModel,epochs=epochs)
+        
+        self.train_model(sig, saveModel=saveModel,epochs=epochs,checkpoint=True,batchSize=batchSize)
 
     
     def train_model(self,sig=False,plotLoss=True,plotVal=True,epochs=50,saveModel=True,
-                    checkpoint=True,batchSize=16):
+                    checkpoint=False,batchSize=16):
         """
         Takes Signal object with input and output data, separates data in training
         and validation sets, transform data for neural network and uses training 
@@ -159,6 +167,7 @@ class Model:
         # iterate over each of the parameters, train the model, save to the model
         # path and plot loss and validation curves
         modelList = []
+        first=True
         
         # Iterate over tau and kp parameters
         for (k,parameter) in enumerate(parameters):
@@ -169,7 +178,18 @@ class Model:
             # Check the dimension of data to ensure that an architecture 
             # exists for the shape of the data. If not, then it will 
             # prompt the user to make a new architecture
-            model = self.mutable_model(x_train,y_train)
+            if checkpoint:
+                if first:
+                    self.x_train = x_train; self.y_train = y_train
+                    valPath = '/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Model Validation/'
+                    name ='MIMO ' + str(sig.inDim) + 'x' + str(sig.outDim)
+                    path = valPath + name + '/Checkpoints/'
+                    self.load_model(sig,directory=path,check=True)
+                    first = False
+                    
+                model = self.modelDict[parameter]
+            else:
+                model = self.mutable_model(x_train,y_train)
                 
             print(model.summary())
             
@@ -234,12 +254,11 @@ class Model:
                 fig, axes = plt.subplots(1, sig.inDim,dpi=200) 
                 fig.add_subplot(111, frameon=False)
                 plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
-                
                 for (i,ax) in enumerate(axes):
-                    ax.plot(y_val[:,i],predictions[0,:,i],'.b',label=parameter)
+                    ax.plot(y_val[:,i],predictions[:,i],'.b',label=parameter)
                     print(stddevs.shape)
-                    r2 =("r\u00b2 = %.3f" % r2_score(y_val[:,i],predictions[0,:,i]))
-                    ax.errorbar(y_val[:,i],predictions[0,:,i],yerr=stddevs[0,:,i]*2,fmt='none',ecolor='green')
+                    r2 =("r\u00b2 = %.3f" % r2_score(y_val[:,i],predictions[:,i]))
+                    ax.errorbar(y_val[:,i],predictions[:,i],yerr=stddevs[:,i]*2,fmt='none',ecolor='green')
                     ax.plot(np.linspace(0,10),np.linspace(0,10),'--r',label = r2)
                     ax.legend(prop={'size': 8})
                 
@@ -259,8 +278,7 @@ class Model:
         mse = sum((y_true-y_pred)**2)
         return mse
     
-    
-    def predict_SISO(self,sig,plotPredict=True,savePredict=False,probabilityCall=False,notSignal=False):
+    def predict_system(self,sig,plotPredict=True,savePredict=False,probabilityCall=False):
         """
         Takes Signal object with input and output data, uses stored model
         to predict parameters based off simulated data, then plots
@@ -288,199 +306,45 @@ class Model:
         if not(isinstance(sig,Signal)):
             print("You need to predict with an instance of signal!")
             return
-        
-        # Predict errors and standard deviations if using probability model
-        if self.Modeltype=='probability':
-            
-            self.kpPredictions = np.array(self.modelDict['kp'](sig.xData['kp']).mean())
-            self.tauPredictions = np.array(self.modelDict['tau'](sig.xData['tau']).mean())
-            self.thetaPredictions = np.array(self.modelDict['theta'](sig.xData['theta']).mean())
-            
-            self.kpError = np.array(2*self.modelDict['kp'](sig.xData['kp']).stddev())
-            self.tauError = np.array(2*self.modelDict['tau'](sig.xData['tau']).stddev())
-            self.thetaError = np.array(2*self.modelDict['theta'](sig.xData['theta']).stddev())           
-          
-        # Otherwise, solve for parameters using regular model
-        else:
-            if not(probabilityCall):
-                prob = Probability(sig)
-                Kperror,tauperror,thetaerror = prob.get_errors()
-        
-            self.kpPredictions = self.modelDict['kp'].predict(sig.xData['kp'])
-            self.tauPredictions = self.modelDict['tau'].predict(sig.xData['tau'])
-            self.thetaPredictions = self.modelDict['theta'].predict(sig.xData['theta'])
-            
-        self.errors = []
-        uArrays = sig.uArray[sig.train,:]
-        yArrays = sig.yArray[sig.train,:]
-        
-        for (i,index) in enumerate(sig.train):
-            taup = self.tauPredictions[i][0]
-            Kp = self.kpPredictions[i][0]
-            theta = self.thetaPredictions[i][0]
-            
-            if self.Modeltype=='probability':
-                Kperror=self.kpError[i]
-                tauperror=self.tauError[i]
-                thetaerror=self.thetaError[i]
-                
-            # Generate random signal using
-            u = uArrays[i,:] 
-            t = np.linspace(0,sig.timelength,sig.nstep)
-            
-            # Subtract time delay and get the 'simulated time' which has
-            # no physical significance. Fill the delay with zeros and
-            # start signal after delay is elapsed
-            tsim = t - theta
-            yindStart = next((i for i, x in enumerate(tsim) if x>0), None)
-            tInclude = tsim[yindStart-1:]
-            uInclude = u[:len(u)-(yindStart-1)]
-            
-            # Use transfer function module from control to simulate 
-            # system response after delay then add to zeros
-            sys = control.tf([Kp,] ,[taup,1.])
-            _,yEnd,_ = control.forced_response(sys,U=uInclude,T=tInclude)
-            yPred = np.concatenate((np.zeros((len(t)-len(tInclude))),yEnd))
-            yTrue = yArrays[i,:]
-            self.errors.append(self.MSE(yPred,yTrue))
-            
-            if plotPredict:
-                plt.figure(dpi=200)
-                plt.plot(t,u,label='Input Signal')
-                s1 = ("Modelled: Kp:%.1f τ:%.1f θ:%.1f  %i%% Noise" % (sig.kps[i],sig.taus[i],sig.thetas[i],sig.stdev))
-                s2 = ("Predicted: Kp:%.1f (%.1f) τ:%.1f (%.1f) θ:%.1f (%.1f)" % (Kp,Kperror,taup,tauperror,theta,thetaerror))
-                plt.plot(t,yTrue, label=s1)
-                plt.plot(t,yPred,'--', label=s2)
-                plt.xlabel("Time (s)")
-                plt.ylabel("Change from set point")
-                plt.legend()
-           
-            if savePredict:
-                savePath = self.pd+"/Predictions/SISO/" + str(i) + ".png"
-                plt.savefig(savePath)       
-    
-    def predict_MIMO(self,sig,plotPredict=True,savePredict=False,probabilityCall=False):
-        """
-        Takes Signal object with input and output data, uses stored model
-        to predict parameters based off simulated data, then plots
-        system output based on predicted parameters.
-        
-        Plots response using predicted parameters along with real response,
-        as well as real and predicted parameters.
-        
-        Parameters
-        ----------
-        sig : Signal (object), default=False
-            Must provide instance of signal class in order to build model or use
-            for prediction. Else, will fail to train. 
-        
-        plotPredict : bool, default=True
-            Plots predicted response with real response.
-        
-        savePredict : bool,default=False
-            Determine whether or not to save predicted responses.
-            
-        probabilityCall : bool, default=False
-            Included to avoid building probability object while trying to 
-            build probability object, leading to endless loop.
-        """
-        if not(isinstance(sig,Signal)):
-            print("You need to predict with an instance of signal!")
-            return
-        
-        if not(probabilityCall):
-            prob = Probability(sig)
-            Kperror,tauperror = prob.get_errors()
         
         # Model is used to predict all out the output variables linearly,
         # so the array is cut depending on which transfer function parameters 
         # correspond to each output variable, then stacked as new trials
         kp_yhat = self.modelDict['kp'](sig.xData['kp'])
         tau_yhat = self.modelDict['tau'](sig.xData['tau'])
+        theta_yhat = self.modelDict['theta'](sig.xData['theta'])
         
-        kpPredPrimal = np.array(kp_yhat.mean())[0,...]     
-        kpStdPrimal = np.array(2*kp_yhat.stddev())[0,...]  
-        kpPred = np.split(kpPredPrimal,sig.outDim,axis=0)
-        kpStd = np.split(kpStdPrimal,sig.outDim,axis=0)
+        predDict = dict()
+        errDict = dict()
+        predDict['kp'] = np.array(kp_yhat.mean()).flatten()
+        errDict['kp'] = np.array(2*kp_yhat.stddev()).flatten()
         
-        tauPredPrimal = np.array(tau_yhat.mean())[0,...]     
-        tauStdPrimal = np.array(2*tau_yhat.stddev())[0,...]  
-        tauPred = np.split(tauPredPrimal,sig.outDim,axis=0)
-        tauStd = np.split(tauStdPrimal,sig.outDim,axis=0)
+        predDict['tau'] = np.array(tau_yhat.mean()).flatten()
+        errDict['tau'] = np.array(2*tau_yhat.stddev()).flatten()
         
-        self.kpPredictions = np.concatenate(kpPred,axis=1)
-        self.tauPredictions = np.concatenate(tauPred,axis=1)
-        self.kpErrors = np.concatenate(kpStd,axis=1)
-        self.tauErrors = np.concatenate(tauStd,axis=1)
+        predDict['theta'] = np.array(theta_yhat.mean()).flatten()
+        errDict['theta'] = np.array(2*theta_yhat.stddev()).flatten()
+            
+        fig, axes = plt.subplots(1, 3,figsize=(15,5),dpi=200)  
+        for (idx,parameter) in enumerate(['kp','tau','theta']):
+            sig.yData[parameter] = sig.yData[parameter].flatten()
+            sig.xData[parameter] = sig.xData[parameter].flatten()
+            ax = axes[idx]
+            fig.add_subplot(111, frameon=False)
+            plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
+            ax.plot(sig.yData[parameter],predDict[parameter],'.b',label=parameter)
+            r2 =("r\u00b2 = %.3f" % r2_score(sig.yData[parameter],predDict[parameter]))
+            ax.errorbar(sig.yData[parameter],predDict[parameter],yerr=errDict[parameter],fmt='none',ecolor='green')
+            ax.plot(np.linspace(0,10),np.linspace(0,10),'--r',label = r2)
+            ax.legend()
         
-        self.errors = []
-        uArrays = sig.uArray
-        yArrays = sig.yArray
+        for ax in axes.flat:
+            ax.label_outer()
         
-        # iterate over the total number of trials
-        for k in range(0,sig.numTrials):
-            # Get the parameters for predicted system response
-            taup = self.tauPredictions[k]
-            Kp = self.kpPredictions[k]
-            kerr = self.kpErrors[k]
-            terr = self.tauErrors[k]
-            
-            t = np.linspace(0,sig.timelength,self.nstep)
-            u = uArrays[k,:,:]
-            
-            nums = []
-            dens = []
-            
-            # The transfer function from the 2nd input to the 1st output is
-            # (3s + 4) / (6s^2 + 5s + 4).
-            # num = [[[1., 2.], [3., 4.]], [[5., 6.], [7., 8.]]]
-            # Iterate over each of the output dimensions and
-            # add to numerator 
-            for j in range(0,sig.outDim):
-                numTemp = []
-                denTemp = []
-                for i in range(0,sig.inDim):
-                    # Iterate over each of the input dimensions
-                    # and add to the numerator array
-                    numTemp.append([Kp[(sig.inDim*j)+i]])
-                    denTemp.append([taup[(sig.inDim*j)+i],1.])
-                nums.append(numTemp)
-                dens.append(denTemp)
-             
-            # Use transfer function class to simulate system response
-            # to MIMO input and randomized parameters 
-            nums=np.array(nums)
-            dens=np.array(dens)
-            sys = control.tf(nums,dens)
-            _,yPred,_ = control.forced_response(sys,U=np.transpose(u),T=t)
-            yPred = np.transpose(yPred)
-            yTrue = yArrays[k,:,:]
-            
-            # Make array of mean squared errors to use later
-            meanerror = np.mean(self.MSE(yPred,yTrue))
-            self.errors.append(meanerror)
-            
-            # Plot predicted and real system response 
-            # based on predicted parameters
-            if plotPredict:
-                plt.figure(dpi=200)
-                plt.plot(t,u)                   
-                s1 = ("Predicted: Kp:%.1f (%.1f), %.1f (%.1f) τ:%.1f (%.1f), %.1f (%.1f)" % (Kp[0],kerr[0],Kp[1],kerr[1],taup[0],terr[0],taup[1],terr[1]))
-                s2 = ("Predicted: Kp%.1f (%.1f), %.1f (%.1f) τ:%.1f (%.1f), %.1f (%.1f)" % (Kp[2],kerr[2],Kp[3],kerr[3],taup[2],terr[2],taup[3],terr[3]))
-                s3 = ("Modelled: Kp:%.1f, %.1f τ:%.1f, %.1f" % (sig.kps[k,0],sig.kps[k,1],sig.taus[k,0],sig.taus[k,1]))
-                s4 = ("Modelled: Kp%.1f, %.1f τ:%.1f, %.1f" % (sig.kps[k,2],sig.kps[k,3],sig.taus[k,2],sig.taus[k,3]))
-                plt.plot(t,yTrue[:,0],'r',label=s3)
-                plt.plot(t,yPred[:,0],'k--',label=s1)
-                plt.plot(t,yTrue[:,1],'b',label=s4)
-                plt.plot(t,yPred[:,1],'g--',label=s2)
-                plt.xlabel("Time (s)")
-                plt.ylabel("Change from set point")
-                plt.legend()
-           
-            if savePredict and k<10:
-                savePath = self.pd+"/Predictions/MIMO/" + str(k) + ".png"
-                plt.savefig(savePath)
-                
+        plt.ylabel("Predicted Parameter Value")
+        plt.xlabel("True Parameter Value")
+
+
     def coeff_determination(self,y_true, y_pred):
         "Coefficient of determination for callback"
         SS_res =  K.sum(K.square( y_true-y_pred ))
@@ -512,12 +376,11 @@ class Model:
         "Probabilistic model for SISO data"
         negloglik = lambda y, rv_y: -rv_y.log_prob(y[:])
         model = tf.keras.Sequential([
-        tf.keras.layers.LSTM(int(width/2), activation='tanh',input_shape=(width,height)),
+        tf.keras.layers.LSTM(int(width/2), activation='tanh',input_shape=(width,height)),          
         tf.keras.layers.Dense(int(self.inDim*10),activation='linear'),
-        tfp.layers.DenseVariational(int(self.inDim*2),Model.posterior_mean_field,Model.prior_trainable,activation='linear',kl_weight=1/x_train.shape[0]),
-        tfp.layers.DistributionLambda(lambda t: tfd.Normal(
-        loc = [t[..., :self.inDim] for i in range(self.inDim)][0],
-        scale = [1e-3 + tf.math.softplus(0.1 * t[...,self.inDim:]) for i in range(self.inDim)][0],)),])
+        tfp.layers.DenseVariational(2*self.inDim,Model.posterior_mean_field,Model.prior_trainable,activation='linear',kl_weight=1/x_train.shape[0]),
+        tfp.layers.DistributionLambda(lambda t: tfd.Normal(loc = t[..., :self.inDim],
+        scale = (1e-3 + tf.math.softplus(0.1 * t[...,self.inDim:])),)),])
         model.compile(optimizer='adam', loss=negloglik,metrics=[self.coeff_determination])
         return model
     
@@ -570,7 +433,7 @@ class Probability:
         points and coefficient of determination.   
     
     """
-    def __init__(self,sig=False,maxError=5,numTrials=1000,plotUncertainty=True):
+    def __init__(self,sig=False,maxError=5,numTrials=100,plotUncertainty=True):
         self.plotUncertainty = plotUncertainty
         self.maxError = int(maxError)
         self.deviations = np.arange(0,maxError)

@@ -270,17 +270,19 @@ class Signal:
         self.yArray = np.array(list(map(self.y_map_function,iterator)))
         print(self.yArray.shape)
         # Colors for plotting input/output signals properly
-        colors = ['k','gray','crimson','r','olive','navy','darkmagenta','indigo','saddlebrown',
-                  'coral','darkorange','cyan']
+        colors = ['midnightblue','gray','darkgreen','crimson','olive','navy','lightcoral','indigo','darkcyan',
+                  'coral','darkorange','navy','r']
         
         # Only plot every 100 input signals
         for outit in range(self.numPlots):
-            plt.figure(figsize=(10,5),dpi=200)
+            plt.figure(figsize=(5,5),dpi=200)
             for it in range(self.uArray.shape[-1]): 
                 label1 = '$u_' + str(it+1) + '(t)$'
                 label2 = '$y_' + str(it+1) + '(t)$'
-                plt.plot(self.t[:500],self.uArray[outit,:500,it],colors[it],label=label1)
-                plt.plot(self.t[:500],self.yArray[outit,:500,it],colors[self.inDim+it],label=label2)
+                plt.plot(self.t[:100],self.uArray[outit,:100,it],colors[it],label=label1)
+                plt.plot(self.t[:100],self.yArray[outit,:100,it],colors[self.inDim+it],label=label2)
+            plt.ylabel("Measured Signal (5% Noise)")
+            plt.xlabel("Time Step (s)")
             plt.legend()
             plt.show()
         
@@ -292,6 +294,7 @@ class Signal:
         else:
             train=range(0,len(self.yArray))
             test=[]
+        
         
         # Make it so that any of these attributes can be accessed 
         # without needing to return them all from the function
@@ -350,7 +353,7 @@ class Signal:
             
             for i in range(0,self.outDim):
                 for j in range(0,self.inDim):
-                    self.xDataMat[a*i:a*(i+1),:,j] = yArray[:,:,i]          
+                    self.xDataMat[a*i:a*(i+1),:,j] = yArray[:,:,i]*uArray[:,:,j]      
         elif name=='tau':
             for j in range(0,self.inDim):
                 dim = self.inDim
@@ -378,12 +381,12 @@ class Signal:
         # Since no training is occurring, can skip separation of testing and validation sets
         self.trainFrac = 1
         
-        uArray,yArray,taus,kps,train,test = self.MIMO_simulation(stdev=self.stdev)
+        uArray,yArray,taus,kps,train,test = self.sys_simulation(stdev=self.stdev)
         a,b,c = np.shape(uArray)
         
         self.xData ={};
         self.yData={}
-        self.names = ["kp","tau"]
+        self.names = ["kp","tau","theta"]
         
         for (i,name) in enumerate(self.names):
             # Develop separate model for each output variable
