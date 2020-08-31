@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Aug 27 10:34:32 2020
+
+@author: RileyBallachay
+"""
+import numpy as np
+import random
+import matplotlib.pyplot as plt
+
+def PRBS(prob_switch=0.1, Range=[-1.0, 1.0],nstep=100):  
+        """Returns a pseudo-random binary sequence 
+        which ranges between -1 and +1"""
+        gbn = np.ones(nstep)
+        gbn = gbn*random.choice([-1,1])
+        probability = np.random.random(nstep)
+        for i in range(0,(nstep-1)):
+            prob = probability[i]
+            gbn[i+1] = gbn[i]
+            if prob < prob_switch:
+                gbn[i+1] = -gbn[i+1]
+        gbn=gbn.reshape((len(gbn),1))
+        return gbn
+
+switches = [0.01,0.05,0.1,0.5]
+
+for switch in switches:
+    avgs = []
+    for i in range(100000):
+        prbs=PRBS(prob_switch=switch)
+        sequences=[]
+        temp=1
+        lasti = prbs[0]
+        for i in prbs[1:]: 
+            if i==lasti:
+                temp+=1
+            else:
+                sequences.append(temp)
+                temp=1
+            lasti=i
+        avg=np.mean(sequences)
+        avgs.append(avg)
+    
+    avgs=np.array(avgs)
+    mean = np.nanmean(avgs)
+    stdev = np.nanstd(avgs)
+    print(("Probability Switch: %.2f" % switch))
+    print(("Period: %.2f +/- %.2f" % (mean,stdev)))
+    plt.figure(dpi=200)
+    plt.hist(avgs,bins=10,label=("Probability Switch: %.2f" % switch))
+    plt.xlabel("PRBS Period")
+    plt.ylabel("Density")
+    plt.legend()

@@ -90,7 +90,7 @@ class Model:
         else:
             loadDir = directory
             
-        models = ['kp.cptk','tau.cptk','theta.cptk']
+        models = ['kp.cptk','tau.cptk']
         for filename in models:
             if filename=='.DS_Store':
                 continue
@@ -103,7 +103,7 @@ class Model:
                 
             model.load_weights(loadDir+filename)
             modelList.append(model)
-        for i in range(0,3):
+        for i in range(0,2):
             self.modelDict[self.names[i]] = modelList[i]
      
         
@@ -312,21 +312,21 @@ class Model:
         # correspond to each output variable, then stacked as new trials
         kp_yhat = self.modelDict['kp'](sig.xData['kp'])
         tau_yhat = self.modelDict['tau'](sig.xData['tau'])
-        theta_yhat = self.modelDict['theta'](sig.xData['theta'])
         
         predDict = dict()
         errDict = dict()
+        self.stdDict = dict()
         predDict['kp'] = np.array(kp_yhat.mean()).flatten()
         errDict['kp'] = np.array(2*kp_yhat.stddev()).flatten()
+        self.stdDict['kp'] = np.mean(errDict['kp'])
         
         predDict['tau'] = np.array(tau_yhat.mean()).flatten()
         errDict['tau'] = np.array(2*tau_yhat.stddev()).flatten()
-        
-        predDict['theta'] = np.array(theta_yhat.mean()).flatten()
-        errDict['theta'] = np.array(2*theta_yhat.stddev()).flatten()
+        self.stdDict['tau'] = np.mean(errDict['tau'])
+
             
-        fig, axes = plt.subplots(1, 3,figsize=(15,5),dpi=200)  
-        for (idx,parameter) in enumerate(['kp','tau','theta']):
+        fig, axes = plt.subplots(1, 2,figsize=(15,5),dpi=400)  
+        for (idx,parameter) in enumerate(['kp','tau']):
             sig.yData[parameter] = sig.yData[parameter].flatten()
             sig.xData[parameter] = sig.xData[parameter].flatten()
             ax = axes[idx]
@@ -334,7 +334,7 @@ class Model:
             plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
             ax.plot(sig.yData[parameter],predDict[parameter],'.b',label=parameter)
             r2 =("r\u00b2 = %.3f" % r2_score(sig.yData[parameter],predDict[parameter]))
-            ax.errorbar(sig.yData[parameter],predDict[parameter],yerr=errDict[parameter],fmt='none',ecolor='green')
+            ax.errorbar(sig.yData[parameter],predDict[parameter],yerr=errDict[parameter],fmt='none',ecolor='green',label=('Avg. Unc.=%.2f' %self.stdDict[parameter]))
             ax.plot(np.linspace(0,10),np.linspace(0,10),'--r',label = r2)
             ax.legend()
         
@@ -358,8 +358,7 @@ class Model:
       return tf.keras.Sequential([
           tfp.layers.VariableLayer(2 * n, dtype=dtype,initializer='glorot_uniform'),
           tfp.layers.DistributionLambda(lambda t: tfd.Independent(
-              tfd.Normal(loc=t[..., :n],scale=1e-5 + tf.nn.softplus(c + t[..., n:])),reinterpreted_batch_ndims=1)),
-      ])
+              tfd.Normal(loc=t[..., :n],scale=1e-5 + tf.nn.softplus(c + t[..., n:])),reinterpreted_batch_ndims=1)),])
      
   # Specify the prior over `keras.layers.Dense` `kernel` and `bias`.
     def prior_trainable(kernel_size, bias_size=0, dtype=None):
@@ -367,8 +366,7 @@ class Model:
       return tf.keras.Sequential([
           tfp.layers.VariableLayer(n, dtype=dtype,initializer='glorot_uniform'),
           tfp.layers.DistributionLambda(lambda t: tfd.Independent(
-              tfd.Normal(loc=t, scale=1),reinterpreted_batch_ndims=1)),
-      ])
+              tfd.Normal(loc=t, scale=1),reinterpreted_batch_ndims=1)),])
 
     def mutable_model(self,x_train,y_train):
         length,width,height = x_train.shape

@@ -35,9 +35,9 @@ n = np.full((100000,2500,10),0,dtype=float)
 
 print("%f bytes" % (n.size * n.itemsize*1e-9))
 """
-fig, axes = plt.subplots(1, 2,figsize=(10,5),dpi=200) 
+fig, axes = plt.subplots(1, 3,figsize=(15,5),dpi=200) 
 
-for (idx,losstype) in enumerate(['MIMO 1x1','MIMO 2x2']):
+for (idx,losstype) in enumerate(['MIMO 1x1','MIMO 2x2','MIMO 3x3']):
     ax=axes[idx]
     direc = '/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Model Validation/'+losstype
     files = [f for f in os.listdir(direc) if f.endswith('.txt')]

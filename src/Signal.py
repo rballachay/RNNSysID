@@ -96,8 +96,10 @@ class Signal:
         self.numTrials = numTrials
         if inDim==1:
             self.nstep = 100
-        else:
+        elif inDim==2:
             self.nstep = 500*inDim
+        else:
+            self.nstep = 750*inDim
 
         self.timelength = self.nstep
         self.trainFrac = trainFrac
@@ -112,6 +114,7 @@ class Signal:
     def PRBS(self,emptyArg, prob_switch=0.1, Range=[-1.0, 1.0]):  
         """Returns a pseudo-random binary sequence 
         which ranges between -1 and +1"""
+        #prob_switch = random.choice([0.05,0.1,0.15,0.2,0.25])
         gbn = np.ones(self.nstep)
         gbn = gbn*random.choice([-1,1])
         probability = np.random.random(self.nstep)
@@ -252,7 +255,7 @@ class Signal:
         # Make random number arrays for parameters
         kpRand = np.random.randint(0,nstep,(numTrials*self.outDim*self.inDim))
         tauRand = np.random.randint(0,nstep,(numTrials*self.outDim*self.inDim))
-        thetaRand = np.random.randint(0,9,(numTrials*self.outDim*self.inDim))
+        thetaRand = np.random.randint(0,len(thetaSpace),(numTrials*self.outDim*self.inDim))
         
         # Create parameter arrays and reshape
         self.KpArray = np.array([KpSpace[i] for i in kpRand]).reshape((numTrials,self.outDim*self.inDim))
@@ -277,7 +280,7 @@ class Signal:
         for outit in range(self.numPlots):
             plt.figure(figsize=(5,5),dpi=200)
             for it in range(self.uArray.shape[-1]): 
-                label1 = '$u_' + str(it+1) + '(t)$'
+                label1 = '$u_' + str(it+1) + '(t)$' 
                 label2 = '$y_' + str(it+1) + '(t)$'
                 plt.plot(self.t[:100],self.uArray[outit,:100,it],colors[it],label=label1)
                 plt.plot(self.t[:100],self.yArray[outit,:100,it],colors[self.inDim+it],label=label2)
@@ -374,14 +377,14 @@ class Signal:
         return self.xDataMat,self.yDataMat
     
     
-    def system_validation(self):
+    def system_validation(self,KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10]):
         """This function makes it easier to run a bunch of simulations and 
         automatically return the validation and testing sets without 
         calling each function separately. """
         # Since no training is occurring, can skip separation of testing and validation sets
         self.trainFrac = 1
         
-        uArray,yArray,taus,kps,train,test = self.sys_simulation(stdev=self.stdev)
+        uArray,yArray,taus,kps,train,test = self.sys_simulation(stdev=self.stdev,KpRange=KpRange,tauRange=tauRange,thetaRange=thetaRange)
         a,b,c = np.shape(uArray)
         
         self.xData ={};

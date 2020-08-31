@@ -5,18 +5,18 @@ Created on Sun Jul 12 17:18:50 2020
 
 @author: RileyBallachay
 """
-from Signal_v2 import Signal
-from Model_v2 import Model
+from Signal import Signal
+from Model import Model
 import time
 
 # These constants are also defined in the Signal module 
 # Don't change here unless you also change them there
-numTrials = 100000
+numTrials = 50000
 batchSize = 64
 plots = 0
 
-inDims = range(2,6)
-outDims = range(2,6)
+inDims = range(1,6)
+outDims = range(1,6)
 
 for (inDimension,outDimension) in zip(inDims,outDims):   
     start_time = time.time()

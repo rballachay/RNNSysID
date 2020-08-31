@@ -20,8 +20,8 @@ plots = 5
 valPath = '/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Model Validation/'
 model_paths = [f.path for f in os.scandir(valPath) if f.is_dir()]
 
-inDims = range(1,6)
-outDims = range(1,6)
+inDims = range(3,6)
+outDims = range(3,6)
 
 for (inDimension,outDimension) in zip(inDims,outDims): 
     name ='MIMO ' + str(inDimension) + 'x' + str(outDimension)
@@ -33,7 +33,7 @@ for (inDimension,outDimension) in zip(inDims,outDims):
 
     # In this case, since we are only loading the model, not trying to train it,
     # we can use function simulate and preprocess 
-    xData,yData = sig.system_validation()
+    xData,yData = sig.system_validation(KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10])
     print("--- %s seconds ---" % (time.time() - start_time))
     
     # Initialize the models that are saved using the parameters declared above
