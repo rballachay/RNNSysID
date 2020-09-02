@@ -1,8 +1,11 @@
 ### RNNSysID
 
 Authors: Riley Ballachay
+
 Language: 100% Python
+
 Date: May-September 2020
+
 Supervision: Dr. Bhushan Gopaluni, Department of Chemical and Biological Engineering, UBC
 
 This repository contains the code for the project Connecting Deep and Bayesian Learning: Estimating Parameters with Uncertainty for Linear Systems.
