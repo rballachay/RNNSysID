@@ -310,7 +310,7 @@ class Signal:
         if self.numPlots>0:
             self.plot_parameter_space(self.tauArray,self.KpArray,self.thetaArray,train,test)
         
-        return self.uArray,self.yArray,self.tauArray,self.KpArray,train,test
+        return self.uArray,self.yArray,self.tauArray,self.KpArray,self.thetaArray,train,test
      
     
     def preprocess(self,xData,yData):
@@ -384,7 +384,7 @@ class Signal:
         # Since no training is occurring, can skip separation of testing and validation sets
         self.trainFrac = 1
         
-        uArray,yArray,taus,kps,train,test = self.sys_simulation(stdev=self.stdev,KpRange=KpRange,tauRange=tauRange,thetaRange=thetaRange)
+        uArray,yArray,taus,kps,thetas,train,test = self.sys_simulation(stdev=self.stdev,KpRange=KpRange,tauRange=tauRange,thetaRange=thetaRange)
         a,b,c = np.shape(uArray)
         
         self.xData ={};

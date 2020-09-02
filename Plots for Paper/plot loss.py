@@ -35,7 +35,7 @@ n = np.full((100000,2500,10),0,dtype=float)
 
 print("%f bytes" % (n.size * n.itemsize*1e-9))
 """
-fig, axes = plt.subplots(1, 3,figsize=(15,5),dpi=200) 
+fig, axes = plt.subplots(1, 3,figsize=(16,5),dpi=400) 
 
 for (idx,losstype) in enumerate(['MIMO 1x1','MIMO 2x2','MIMO 3x3']):
     ax=axes[idx]
@@ -47,7 +47,7 @@ for (idx,losstype) in enumerate(['MIMO 1x1','MIMO 2x2','MIMO 3x3']):
     fig.add_subplot(111, frameon=False)
     plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
     for (it,file) in enumerate(files):
-        plotData = np.zeros(150)
+        plotData = np.zeros(250)
         data = np.loadtxt(direc+ '/'+file)
         ind = np.argmin(data)
         data[ind:] = min(data)
@@ -58,7 +58,7 @@ for (idx,losstype) in enumerate(['MIMO 1x1','MIMO 2x2','MIMO 3x3']):
         else:
             linestyle='dashed'
         
-        ax.plot(range(1,151),plotData,colors[it],label=names[it],linestyle=linestyle)
+        ax.plot(range(1,251),plotData,colors[it],label=names[it],linestyle=linestyle)
         
     ax.set_ylim([0,3])
     ax.legend(title=losstype)

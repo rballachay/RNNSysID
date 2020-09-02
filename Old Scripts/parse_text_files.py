@@ -10,6 +10,7 @@ import re
 
 textsource = '/Users/RileyBallachay/Desktop/Tau3x3.txt'
 textsource2 = '/Users/RileyBallachay/Desktop/kp3x3.txt'
+textsource3 = '/Users/RileyBallachay/Desktop/theta4x4.txt'
 
 def find_all_indexes(input_str, search_str):
     l1 = []
@@ -25,6 +26,28 @@ def find_all_indexes(input_str, search_str):
 
 findwords = ["/step - loss: "," - val_loss: "]
 
+with open(textsource3, 'r') as file:
+    data = file.read().replace('\n', '')
+    
+lossID = find_all_indexes(data,findwords[0])
+valID = find_all_indexes(data,findwords[1])
+
+loss = np.zeros(len(lossID))
+val = np.zeros(len(lossID))
+    
+for (i,ID) in enumerate(lossID):
+    ID = ID+len(findwords[0])
+    loss[i] = data[ID:ID+7]
+    VALID = valID[i]+len(findwords[1])
+    val[i] = data[VALID:VALID+7]
+
+name1='/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Model Validation/MIMO 3x3/theta_loss.txt'
+np.savetxt(name1,loss)
+
+name2='/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Model Validation/MIMO 3x3/theta_val_loss.txt'
+np.savetxt(name2,val)
+
+"""
 with open(textsource, 'r') as file:
     data = file.read().replace('\n', '')
     
@@ -66,3 +89,5 @@ np.savetxt(name1,loss)
 
 name2='/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Model Validation/MIMO 3x3/kp_val_loss.txt'
 np.savetxt(name2,val)
+
+"""

@@ -90,7 +90,7 @@ class Model:
         else:
             loadDir = directory
             
-        models = ['kp.cptk','tau.cptk']
+        models = ['kp.cptk','tau.cptk','theta.cptk']
         for filename in models:
             if filename=='.DS_Store':
                 continue
@@ -103,7 +103,7 @@ class Model:
                 
             model.load_weights(loadDir+filename)
             modelList.append(model)
-        for i in range(0,2):
+        for i in range(0,3):
             self.modelDict[self.names[i]] = modelList[i]
      
         
@@ -312,6 +312,7 @@ class Model:
         # correspond to each output variable, then stacked as new trials
         kp_yhat = self.modelDict['kp'](sig.xData['kp'])
         tau_yhat = self.modelDict['tau'](sig.xData['tau'])
+        theta_yhat = self.modelDict['theta'](sig.xData['theta'])
         
         predDict = dict()
         errDict = dict()
@@ -323,10 +324,13 @@ class Model:
         predDict['tau'] = np.array(tau_yhat.mean()).flatten()
         errDict['tau'] = np.array(2*tau_yhat.stddev()).flatten()
         self.stdDict['tau'] = np.mean(errDict['tau'])
-
+        
+        predDict['theta'] = np.array(theta_yhat.mean()).flatten()
+        errDict['theta'] = np.array(2*theta_yhat.stddev()).flatten()
+        self.stdDict['theta'] = np.mean(errDict['theta'])
             
-        fig, axes = plt.subplots(1, 2,figsize=(15,5),dpi=400)  
-        for (idx,parameter) in enumerate(['kp','tau']):
+        fig, axes = plt.subplots(1, 3,figsize=(15,5),dpi=400)  
+        for (idx,parameter) in enumerate(['kp','tau','theta']):
             sig.yData[parameter] = sig.yData[parameter].flatten()
             sig.xData[parameter] = sig.xData[parameter].flatten()
             ax = axes[idx]
