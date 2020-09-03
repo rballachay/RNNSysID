@@ -13,7 +13,7 @@ import numpy as np
 
 # These constants are also defined in the Signal module 
 # Don't change here unless you also change them there
-NUMTRIALS = 100
+NUMTRIALS = 1000
 batchSize = 16
 plots = 5
 

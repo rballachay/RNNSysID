@@ -111,7 +111,7 @@ class Signal:
         self.inDim = inDim
         self.outDim = outDim
     
-    def PRBS(self,emptyArg, prob_switch=0.1, Range=[-1.0, 1.0]):  
+    def PRBS(self,emptyArg, prob_switch=0.5, Range=[-1.0, 1.0]):  
         """Returns a pseudo-random binary sequence 
         which ranges between -1 and +1"""
         #prob_switch = random.choice([0.05,0.1,0.15,0.2,0.25])

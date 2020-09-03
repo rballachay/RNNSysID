@@ -29,7 +29,7 @@ for (inDimension,outDimension) in zip(inDims,outDims):
     
     start_time = time.time()
     numTrials=int(NUMTRIALS/(inDimension*outDimension))
-    sig = Signal(inDimension,outDimension,numTrials,numPlots=plots)
+    sig = Signal(inDimension,outDimension,numTrials,numPlots=plots,stdev=5)
 
     # In this case, since we are only loading the model, not trying to train it,
     # we can use function simulate and preprocess 
