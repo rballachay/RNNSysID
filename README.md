@@ -1,4 +1,4 @@
-### RNNSysID
+# RNNSysID
 
 Authors: Riley Ballachay
 
