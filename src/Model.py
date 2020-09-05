@@ -175,6 +175,7 @@ class Model:
             x_train,x_val,y_train,y_val,numDim = sig.preprocess(xData,yData)
             self.outDim = sig.outDim;self.inDim=sig.inDim
             
+            """
             # Check the dimension of data to ensure that an architecture 
             # exists for the shape of the data. If not, then it will 
             # prompt the user to make a new architecture
@@ -189,7 +190,8 @@ class Model:
                     
                 model = self.modelDict[parameter]
             else:
-                model = self.mutable_model(x_train,y_train)
+            """
+            model = self.mutable_model(x_train,y_train)
                 
             print(model.summary())
             
@@ -198,7 +200,7 @@ class Model:
             checkpoint_path = checkptDir + self.names[k] + '.cptk'
             cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
                         save_weights_only=True,save_best_only=True,verbose=1) 
-            MTC = MyThresholdCallback(0.95)
+            MTC = MyThresholdCallback(0.97)
             
             print("Fit model on training data")
             history = model.fit(
@@ -220,13 +222,14 @@ class Model:
             np.savetxt(plotDir+parameter+'_val_loss.txt', numpy_val_history, delimiter=",")
             
             # Store each model in dictionary and list
-            modelList.append(model)
-            self.modelDict[self.names[k]] = model
-            yhat = model(x_val)
-            predictions = np.array(yhat.mean())
-            stddevs = np.array(yhat.stddev())
+            #modelList.append(model)
+            #self.modelDict[self.names[k]] = model
+            #yhat = model(x_val)
+            #predictions = np.array(yhat.mean())
+            #stddevs = np.array(yhat.stddev())
 
             # Only save model if true
+            """
             if saveModel:
                 modelpath = plotDir+self.names[k]
                 fileOverwriter=0
@@ -247,9 +250,10 @@ class Model:
                 if saveModel:
                     plt.savefig(plotDir+parameter+'_loss'+'.png')
                 plt.show()
-            
+            """
             # Plot predicted and actual value for each paramter and
             # coefficient of determination
+            """
             if plotVal:
                 fig, axes = plt.subplots(1, sig.inDim,dpi=200) 
                 fig.add_subplot(111, frameon=False)
@@ -268,7 +272,7 @@ class Model:
                 if saveModel:
                     plt.savefig(plotDir+self.names[k]+'.png')
                 plt.show()  
-        
+            """
         return  
  
     

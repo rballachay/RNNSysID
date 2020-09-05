@@ -9,42 +9,50 @@ import numpy as np
 import random
 import matplotlib.pyplot as plt
 
-def PRBS(prob_switch=0.1, Range=[-1.0, 1.0],nstep=100):  
+def PRBS(mean,nstep=100):  
         """Returns a pseudo-random binary sequence 
         which ranges between -1 and +1"""
-        gbn = np.ones(nstep)
-        gbn = gbn*random.choice([-1,1])
-        probability = np.random.random(nstep)
-        for i in range(0,(nstep-1)):
-            prob = probability[i]
-            gbn[i+1] = gbn[i]
-            if prob < prob_switch:
-                gbn[i+1] = -gbn[i+1]
-        gbn=gbn.reshape((len(gbn),1))
+        gbn = np.zeros(nstep)
+        loc=0
+        currentval = np.random.choice([-1,1])
+        dist = [int(round(i,0)) for i in np.random.normal(mean,mean/2,nstep)]
+        print(np.mean(dist))
+        i=0
+        while loc<(nstep-1):
+            stride = dist[i]
+            if loc+stride>(nstep-1):
+                gbn[loc:] = currentval     
+            else:
+                gbn[loc:loc+stride] = currentval
+                currentval = -currentval
+            loc = loc+stride
+            i+=1
         return gbn
 
-switches = [0.01,0.05,0.1,0.5]
+switches = [5,10,15,20,25,30,35]
+frequencies = []
 
 for switch in switches:
     avgs = []
-    for i in range(100000):
-        prbs=PRBS(prob_switch=switch)
+    for i in range(1000):
+        prbs=PRBS(switch)
         sequences=[]
         temp=1
         lasti = prbs[0]
-        for i in prbs[1:]: 
+        for index,i in enumerate(prbs[1:]): 
             if i==lasti:
                 temp+=1
             else:
                 sequences.append(temp)
                 temp=1
             lasti=i
-        avg=np.mean(sequences)
-        avgs.append(avg)
+        sequences.append(temp)
+        avgs+=sequences
     
     avgs=np.array(avgs)
     mean = np.nanmean(avgs)
     stdev = np.nanstd(avgs)
+    frequencies.append(mean)
     print(("Probability Switch: %.2f" % switch))
     print(("Period: %.2f +/- %.2f" % (mean,stdev)))
     plt.figure(dpi=200)
@@ -52,3 +60,6 @@ for switch in switches:
     plt.xlabel("PRBS Period")
     plt.ylabel("Density")
     plt.legend()
+    
+plt.figure(dpi=200)
+plt.plot(switches,frequencies)

@@ -94,13 +94,7 @@ class Signal:
     
     def __init__(self,inDim,outDim,numTrials,trainFrac=0.7,numPlots=5,stdev=5):
         self.numTrials = numTrials
-        if inDim==1:
-            self.nstep = 100
-        elif inDim==2:
-            self.nstep = 500*inDim
-        else:
-            self.nstep = 750*inDim
-
+        self.nstep = 100*inDim*outDim
         self.timelength = self.nstep
         self.trainFrac = trainFrac
         self.valFrac = 1-trainFrac
@@ -111,20 +105,27 @@ class Signal:
         self.inDim = inDim
         self.outDim = outDim
     
-    def PRBS(self,emptyArg, prob_switch=0.5, Range=[-1.0, 1.0]):  
+    def PRBS(self,emptyArg):  
         """Returns a pseudo-random binary sequence 
-        which ranges between -1 and +1"""
-        #prob_switch = random.choice([0.05,0.1,0.15,0.2,0.25])
-        gbn = np.ones(self.nstep)
-        gbn = gbn*random.choice([-1,1])
-        probability = np.random.random(self.nstep)
-        for i in range(0,(self.nstep-1)):
-            prob = probability[i]
-            gbn[i+1] = gbn[i]
-            if prob < prob_switch:
-                gbn[i+1] = -gbn[i+1]
-        gbn=gbn.reshape((len(gbn),1))
-        return gbn
+        which ranges between -1 and +1. This algorithm
+        assumes the maximum time constant is 10, and uses
+        the time constant to determine the """
+        gbn = np.zeros(self.nstep)
+        mean = 10*2**(self.inDim)
+        loc=0
+        currentval = np.random.choice([-1,1])
+        dist = [int(round(i,0)) for i in np.random.normal(mean,mean/2,self.nstep)]
+        i=0
+        while loc<(self.nstep-1):
+            stride = dist[i]
+            if loc+stride>(self.nstep-1):
+                gbn[loc:] = currentval     
+            else:
+                gbn[loc:loc+stride] = currentval
+                currentval = -currentval
+            loc = loc+stride
+            i+=1
+        return gbn.reshape((len(gbn),1))
  
     def plot_parameter_space(self,x,y,z,trainID,valID):
         """This function plots the parameter space for a first 
@@ -147,6 +148,7 @@ class Signal:
         of 5% of the maximum returned value."""
         # If the array has 2 dimensions, this will capture it
         # Otherwise, it will evaluate the length of 1D array
+        stdev = random.choice([1,2,3,4,5,6,7,8,9,10])
         noise = np.random.normal(0,(stdev/100)*np.amax(array),array.shape)
         return array+noise
     

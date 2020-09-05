@@ -11,7 +11,7 @@ import time
 
 # These constants are also defined in the Signal module 
 # Don't change here unless you also change them there
-numTrials = 50000
+numTrials = 100000
 batchSize = 64
 plots = 0
 
@@ -23,13 +23,13 @@ for (inDimension,outDimension) in zip(inDims,outDims):
     
     sig = Signal(inDimension,outDimension,numTrials,numPlots=plots)
     
-    uArray,yArray,tauArray,KpArray,train,test = sig.sys_simulation()
+    uArray,yArray,tauArray,KpArray,thetaArray,train,test = sig.sys_simulation()
     print("--- %s seconds ---" % (time.time() - start_time))
 
     # These two lines are for training the model based on nstep and the sig data
     # Only uncomment if you want to train and not predict
     trainModel = Model()
-    trainModel.load_and_train(sig,epochs=100,batchSize=batchSize,saveModel=False,plotLoss=bool(plots!=0),plotVal=bool(plots!=0))
+    trainModel.load_and_train(sig,epochs=250,batchSize=batchSize,saveModel=False,plotLoss=bool(plots!=0),plotVal=bool(plots!=0))
     print("--- %s seconds ---" % (time.time() - start_time))
    
 '''
