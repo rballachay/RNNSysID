@@ -94,7 +94,7 @@ class Signal:
     
     def __init__(self,inDim,outDim,numTrials,trainFrac=0.7,numPlots=5,stdev=5):
         self.numTrials = numTrials
-        self.nstep = 100*inDim*outDim
+        self.nstep = 100*inDim
         self.timelength = self.nstep
         self.trainFrac = trainFrac
         self.valFrac = 1-trainFrac
@@ -110,22 +110,23 @@ class Signal:
         which ranges between -1 and +1. This algorithm
         assumes the maximum time constant is 10, and uses
         the time constant to determine the """
-        gbn = np.zeros(self.nstep)
-        mean = 10*2**(self.inDim)
+        random
+        gbn = np.zeros(int(self.nstep*10*random.uniform(0,1)))
+        mean = 10*2*(self.inDim)
         loc=0
-        currentval = np.random.choice([-1,1])
-        dist = [int(round(i,0)) for i in np.random.normal(mean,mean/2,self.nstep)]
+        currentval = np.random.choice([0,1])
         i=0
-        while loc<(self.nstep-1):
-            stride = dist[i]
-            if loc+stride>(self.nstep-1):
+        while loc<(len(gbn)-1):
+            stride = int(round(np.random.normal(mean,mean/2),0))
+            if loc+stride>(len(gbn)-1):
                 gbn[loc:] = currentval     
             else:
                 gbn[loc:loc+stride] = currentval
-                currentval = -currentval
+                currentval = int(1-currentval)
             loc = loc+stride
             i+=1
-        return gbn.reshape((len(gbn),1))
+              
+        return np.concatenate((gbn.reshape((len(gbn),1))[::-1],np.full((self.nstep*10-len(gbn),1),self.special_value)),axis=0)
  
     def plot_parameter_space(self,x,y,z,trainID,valID):
         """This function plots the parameter space for a first 
@@ -148,7 +149,7 @@ class Signal:
         of 5% of the maximum returned value."""
         # If the array has 2 dimensions, this will capture it
         # Otherwise, it will evaluate the length of 1D array
-        stdev = random.choice([1,2,3,4,5,6,7,8,9,10])
+        stdev = random.choice([1,2,3,4,5])
         noise = np.random.normal(0,(stdev/100)*np.amax(array),array.shape)
         return array+noise
     
@@ -178,7 +179,7 @@ class Signal:
         # num = [[[1., 2.], [3., 4.]], [[5., 6.], [7., 8.]]]
         # Iterate over each of the output dimensions and
         # add to numerator 
-        allY=np.zeros((self.nstep,self.outDim))
+        allY=np.zeros((self.nstep*10,self.outDim))
         for j in range(0,self.outDim):
             # Iterate over each of the input dimensions
             # and add to the numerator array
@@ -252,7 +253,7 @@ class Signal:
         KpSpace = np.linspace(KpRange[0],KpRange[1],nstep)
         taupSpace = np.linspace(tauRange[0],tauRange[1],nstep)
         thetaSpace = np.arange(thetaRange[0],thetaRange[1])
-        self.t = np.linspace(0,timelength,nstep)
+        self.t = np.linspace(0,timelength*10,nstep*10)
         
         # Make random number arrays for parameters
         kpRand = np.random.randint(0,nstep,(numTrials*self.outDim*self.inDim))
@@ -330,8 +331,8 @@ class Signal:
         trainspace = xData[self.train]
         valspace = xData[self.test] 
         
-        x_train= trainspace.reshape((math.floor(self.numTrials*self.trainFrac),self.nstep,numDim))    
-        x_val = valspace.reshape((math.floor(self.numTrials*(1-self.trainFrac)),self.nstep,numDim))
+        x_train= trainspace.reshape((math.floor(self.numTrials*self.trainFrac),self.nstep*10,numDim))    
+        x_val = valspace.reshape((math.floor(self.numTrials*(1-self.trainFrac)),self.nstep*10,numDim))
         
         try:
             y_val = np.array([yData[i,:] for i in self.test])

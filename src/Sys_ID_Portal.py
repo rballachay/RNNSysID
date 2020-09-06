@@ -11,9 +11,9 @@ import time
 
 # These constants are also defined in the Signal module 
 # Don't change here unless you also change them there
-numTrials = 100000
+numTrials = 10000
 batchSize = 64
-plots = 0
+plots = 5
 
 inDims = range(1,6)
 outDims = range(1,6)

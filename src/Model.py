@@ -174,6 +174,8 @@ class Model:
             xData,yData = sig.stretch_MIMO(parameter)
             x_train,x_val,y_train,y_val,numDim = sig.preprocess(xData,yData)
             self.outDim = sig.outDim;self.inDim=sig.inDim
+            self.length,self.width,self.height=x_train.shape
+            self.numTrials=sig.numTrials;self.nstep=sig.nstep
             
             """
             # Check the dimension of data to ensure that an architecture 
@@ -191,7 +193,7 @@ class Model:
                 model = self.modelDict[parameter]
             else:
             """
-            model = self.mutable_model(x_train,y_train)
+            model = self.mutable_model()
                 
             print(model.summary())
             
@@ -353,7 +355,7 @@ class Model:
         plt.xlabel("True Parameter Value")
 
 
-    def coeff_determination(self,y_true, y_pred):
+    def coeff_determination(y_true, y_pred):
         "Coefficient of determination for callback"
         SS_res =  K.sum(K.square( y_true-y_pred ))
         SS_tot = K.sum(K.square( y_true - K.mean(y_true) ) )
@@ -376,18 +378,31 @@ class Model:
           tfp.layers.DistributionLambda(lambda t: tfd.Independent(
               tfd.Normal(loc=t, scale=1),reinterpreted_batch_ndims=1)),])
 
-    def mutable_model(self,x_train,y_train):
+    def mutable_model(self):
+        "Probabilistic model for SISO data"
+        negloglik = lambda y, rv_y: -rv_y.log_prob(y[:])
+        model = tf.keras.Sequential([
+        tf.keras.layers.Masking(mask_value=self.special_value, input_shape=(None, self.height)),
+        tf.keras.layers.LSTM(int(self.nstep/2), activation='tanh'),          
+        tf.keras.layers.Dense(int(self.inDim*10),activation='linear'),
+        tfp.layers.DenseVariational(2*self.inDim,Model.posterior_mean_field,Model.prior_trainable,activation='linear',kl_weight=self.numTrials),
+        tfp.layers.DistributionLambda(lambda t: tfd.Normal(loc = t[..., :self.inDim],
+        scale = (1e-3 + tf.math.softplus(0.1 * t[...,self.inDim:])),)),])
+        model.compile(optimizer='adam', loss=negloglik,metrics=[Model.coeff_determination])
+        return model
+    
+    def mutable_model_noAttribute(x_train,y_train):
         length,width,height = x_train.shape
         outheight,outwidth = y_train.shape
         "Probabilistic model for SISO data"
         negloglik = lambda y, rv_y: -rv_y.log_prob(y[:])
         model = tf.keras.Sequential([
-        tf.keras.layers.LSTM(int(width/2), activation='tanh',input_shape=(width,height)),          
-        tf.keras.layers.Dense(int(self.inDim*10),activation='linear'),
-        tfp.layers.DenseVariational(2*self.inDim,Model.posterior_mean_field,Model.prior_trainable,activation='linear',kl_weight=1/x_train.shape[0]),
-        tfp.layers.DistributionLambda(lambda t: tfd.Normal(loc = t[..., :self.inDim],
-        scale = (1e-3 + tf.math.softplus(0.1 * t[...,self.inDim:])),)),])
-        model.compile(optimizer='adam', loss=negloglik,metrics=[self.coeff_determination])
+        tf.keras.layers.LSTM(int(width/2), activation='tanh',input_shape=(None,height)),          
+        tf.keras.layers.Dense(int(1*10),activation='linear'),
+        tfp.layers.DenseVariational(2*1,Model.posterior_mean_field,Model.prior_trainable,activation='linear',kl_weight=1/x_train.shape[0]),
+        tfp.layers.DistributionLambda(lambda t: tfd.Normal(loc = t[..., :1],
+        scale = (1e-3 + tf.math.softplus(0.1 * t[...,1:])),)),])
+        model.compile(optimizer='adam', loss=negloglik,metrics=[Model.coeff_determination])
         return model
     
 class Probability:
