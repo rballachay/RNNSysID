@@ -176,7 +176,8 @@ class Model:
             self.outDim = sig.outDim;self.inDim=sig.inDim
             self.length,self.width,self.height=x_train.shape
             self.numTrials=sig.numTrials;self.nstep=sig.nstep
-            
+            self.maxLen = sig.maxLen
+            self.trainFrac = sig.trainFrac
             """
             # Check the dimension of data to ensure that an architecture 
             # exists for the shape of the data. If not, then it will 
@@ -385,7 +386,7 @@ class Model:
         tf.keras.layers.Masking(mask_value=self.special_value, input_shape=(None, self.height)),
         tf.keras.layers.LSTM(int(self.nstep/2), activation='tanh'),          
         tf.keras.layers.Dense(int(self.inDim*10),activation='linear'),
-        tfp.layers.DenseVariational(2*self.inDim,Model.posterior_mean_field,Model.prior_trainable,activation='linear',kl_weight=self.numTrials),
+        tfp.layers.DenseVariational(2*self.inDim,Model.posterior_mean_field,Model.prior_trainable,activation='linear',kl_weight=1/self.nstep*self.trainFrac),
         tfp.layers.DistributionLambda(lambda t: tfd.Normal(loc = t[..., :self.inDim],
         scale = (1e-3 + tf.math.softplus(0.1 * t[...,self.inDim:])),)),])
         model.compile(optimizer='adam', loss=negloglik,metrics=[Model.coeff_determination])

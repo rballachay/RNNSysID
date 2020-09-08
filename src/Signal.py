@@ -94,7 +94,7 @@ class Signal:
     
     def __init__(self,inDim,outDim,numTrials,trainFrac=0.7,numPlots=5,stdev=5):
         self.numTrials = numTrials
-        self.nstep = 100*inDim
+        self.nstep = 100*inDim*outDim
         self.timelength = self.nstep
         self.trainFrac = trainFrac
         self.valFrac = 1-trainFrac
@@ -104,29 +104,28 @@ class Signal:
         self.startTime=time.time()
         self.inDim = inDim
         self.outDim = outDim
+        self.maxLen = 5
     
     def PRBS(self,emptyArg):  
         """Returns a pseudo-random binary sequence 
         which ranges between -1 and +1. This algorithm
         assumes the maximum time constant is 10, and uses
         the time constant to determine the """
-        random
-        gbn = np.zeros(int(self.nstep*10*random.uniform(0,1)))
+        gbn = np.zeros(int(self.nstep*self.maxLen*random.uniform(0,1)))
         mean = 10*2*(self.inDim)
         loc=0
-        currentval = np.random.choice([0,1])
+        currentval = np.random.choice([-1,1])
         i=0
-        while loc<(len(gbn)-1):
+        while loc<(self.nstep-1):
             stride = int(round(np.random.normal(mean,mean/2),0))
-            if loc+stride>(len(gbn)-1):
+            if loc+stride>(self.nstep-1):
                 gbn[loc:] = currentval     
             else:
                 gbn[loc:loc+stride] = currentval
-                currentval = int(1-currentval)
+                currentval = -currentval
             loc = loc+stride
             i+=1
-              
-        return np.concatenate((gbn.reshape((len(gbn),1))[::-1],np.full((self.nstep*10-len(gbn),1),self.special_value)),axis=0)
+        return np.concatenate((gbn.reshape((len(gbn),1)),np.full((int(self.nstep*self.maxLen-len(gbn)),1),self.special_value)))
  
     def plot_parameter_space(self,x,y,z,trainID,valID):
         """This function plots the parameter space for a first 
@@ -179,7 +178,7 @@ class Signal:
         # num = [[[1., 2.], [3., 4.]], [[5., 6.], [7., 8.]]]
         # Iterate over each of the output dimensions and
         # add to numerator 
-        allY=np.zeros((self.nstep*10,self.outDim))
+        allY=np.zeros((self.nstep*self.maxLen,self.outDim))
         for j in range(0,self.outDim):
             # Iterate over each of the input dimensions
             # and add to the numerator array
@@ -253,7 +252,7 @@ class Signal:
         KpSpace = np.linspace(KpRange[0],KpRange[1],nstep)
         taupSpace = np.linspace(tauRange[0],tauRange[1],nstep)
         thetaSpace = np.arange(thetaRange[0],thetaRange[1])
-        self.t = np.linspace(0,timelength*10,nstep*10)
+        self.t = np.linspace(0,timelength*self.maxLen,nstep*self.maxLen)
         
         # Make random number arrays for parameters
         kpRand = np.random.randint(0,nstep,(numTrials*self.outDim*self.inDim))
@@ -331,8 +330,8 @@ class Signal:
         trainspace = xData[self.train]
         valspace = xData[self.test] 
         
-        x_train= trainspace.reshape((math.floor(self.numTrials*self.trainFrac),self.nstep*10,numDim))    
-        x_val = valspace.reshape((math.floor(self.numTrials*(1-self.trainFrac)),self.nstep*10,numDim))
+        x_train= trainspace.reshape((math.floor(self.numTrials*self.trainFrac),self.nstep*self.maxLen,numDim))    
+        x_val = valspace.reshape((math.floor(self.numTrials*(1-self.trainFrac)),self.nstep*self.maxLen,numDim))
         
         try:
             y_val = np.array([yData[i,:] for i in self.test])
