@@ -384,8 +384,8 @@ class Model:
         negloglik = lambda y, rv_y: -rv_y.log_prob(y[:])
         model = tf.keras.Sequential([
         tf.keras.layers.Masking(mask_value=self.special_value, input_shape=(None, self.height)),
-        tf.keras.layers.LSTM(int(self.nstep/2), activation='tanh'),          
-        tf.keras.layers.Dense(int(self.inDim*10),activation='linear'),
+        tf.keras.layers.LSTM(100, activation='tanh'),          
+        tf.keras.layers.Dense(20,activation='linear'),
         tfp.layers.DenseVariational(2*self.inDim,Model.posterior_mean_field,Model.prior_trainable,activation='linear',kl_weight=1/self.nstep*self.trainFrac),
         tfp.layers.DistributionLambda(lambda t: tfd.Normal(loc = t[..., :self.inDim],
         scale = (1e-3 + tf.math.softplus(0.1 * t[...,self.inDim:])),)),])

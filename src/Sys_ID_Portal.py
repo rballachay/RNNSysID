@@ -11,12 +11,12 @@ import time
 
 # These constants are also defined in the Signal module 
 # Don't change here unless you also change them there
-numTrials = 100000
+numTrials = 100
 batchSize = 64
 plots = 5
 
-inDims = range(1,6)
-outDims = range(1,6)
+inDims = range(2,6)
+outDims = range(2,6)
 
 for (inDimension,outDimension) in zip(inDims,outDims):   
     start_time = time.time()
@@ -29,7 +29,7 @@ for (inDimension,outDimension) in zip(inDims,outDims):
     # These two lines are for training the model based on nstep and the sig data
     # Only uncomment if you want to train and not predict
     trainModel = Model()
-    trainModel.load_and_train(sig,epochs=250,batchSize=batchSize,saveModel=False,plotLoss=bool(plots!=0),plotVal=bool(plots!=0))
+    trainModel.train_model(sig,epochs=250,batchSize=batchSize,saveModel=False,plotLoss=bool(plots!=0),plotVal=bool(plots!=0))
     print("--- %s seconds ---" % (time.time() - start_time))
    
 '''

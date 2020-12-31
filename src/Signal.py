@@ -8,6 +8,7 @@ Created on Tue Jun 30 16:25:30 2020
 import numpy as np
 import random
 import math
+from pylfsr import LFSR
 import matplotlib.pyplot as plt
 import scipy.signal as signal
 from mpl_toolkits.mplot3d import Axes3D
@@ -93,39 +94,78 @@ class Signal:
     """
     
     def __init__(self,inDim,outDim,numTrials,trainFrac=0.7,numPlots=5,stdev=5):
+        if inDim>1:
+            self.flag = True
+        else:
+            self.flag = False
         self.numTrials = numTrials
-        self.nstep = 100*inDim*outDim
-        self.timelength = self.nstep
         self.trainFrac = trainFrac
         self.valFrac = 1-trainFrac
         self.numPlots = numPlots
+        self.len = 100
         self.stdev=stdev
         self.special_value=-99
         self.startTime=time.time()
         self.inDim = inDim
+        self.nstep = int(self.len*(1+np.floor(self.inDim%2)))
+        self.timelength = self.nstep
         self.outDim = outDim
         self.maxLen = 5
     
-    def PRBS(self,emptyArg):  
+    def PRBS_parameterization(self,numRegisters=9):
+        """This function serves to determine the best PRBS 
+        parameters to allow for identification. Based on
+        work from Rivera and Jung, 2000: ”An integrated 
+        identification and control design methodology 
+        for multivariable process system applications”
+        
+        T_sw: Switching time 
+        nr: Number of registers
+        tau_L: Minimum time constant 
+        tau_H: Maximum time constant 
+        alpha: Closed-loop response speed 
+        """
+        tau_L = self.bRange[0]
+        tau_H = self.bRange[1]
+        
+        # Five times the settling time is 99% settled
+        alpha = tau_H*5
+        T_sw = int(2*278*tau_L/alpha)
+        
+        """Yields MLSequence of 511. Sequence repeats after
+        nr*T_sw sampling intervals. 
+        """
+        nr = numRegisters
+        Ns = 2**nr-1
+        
+        return T_sw,Ns*T_sw
+
+    
+    def PRBS(self):  
         """Returns a pseudo-random binary sequence 
         which ranges between -1 and +1. This algorithm
         assumes the maximum time constant is 10, and uses
         the time constant to determine the """
-        gbn = np.zeros(int(self.nstep*self.maxLen*random.uniform(0,1)))
-        mean = 10*2*(self.inDim)
-        loc=0
-        currentval = np.random.choice([-1,1])
-        i=0
-        while loc<(self.nstep-1):
-            stride = int(round(np.random.normal(mean,mean/2),0))
-            if loc+stride>(self.nstep-1):
-                gbn[loc:] = currentval     
-            else:
-                gbn[loc:loc+stride] = currentval
-                currentval = -currentval
-            loc = loc+stride
-            i+=1
-        return np.concatenate((gbn.reshape((len(gbn),1)),np.full((int(self.nstep*self.maxLen-len(gbn)),1),self.special_value)))
+        sample,max_len = self.PRBS_parameterization()
+        length=self.len
+        if length>max_len:
+            length=max_len
+        
+        L = LFSR(fpoly=[9,5],initstate ='random',verbose=False)
+        L.runKCycle(int(np.floor(length/sample)))
+        seq = L.seq
+        PRBS = np.zeros(length)
+        for i in range(0,int(length/sample)):                
+            if seq[i]==0:
+                seq[i]=-1
+                
+            if sample*i+sample>=length:
+                PRBS[sample*i:] = seq[i]
+                break
+        
+            PRBS[sample*i:sample*i+sample]=seq[i]
+        
+        return PRBS
  
     def plot_parameter_space(self,x,y,z,trainID,valID):
         """This function plots the parameter space for a first 
@@ -148,7 +188,7 @@ class Signal:
         of 5% of the maximum returned value."""
         # If the array has 2 dimensions, this will capture it
         # Otherwise, it will evaluate the length of 1D array
-        stdev = random.choice([1,2,3,4,5])
+        stdev = 5
         noise = np.random.normal(0,(stdev/100)*np.amax(array),array.shape)
         return array+noise
     
@@ -178,26 +218,26 @@ class Signal:
         # num = [[[1., 2.], [3., 4.]], [[5., 6.], [7., 8.]]]
         # Iterate over each of the output dimensions and
         # add to numerator 
-        allY=np.zeros((self.nstep*self.maxLen,self.outDim))
+        allY=np.zeros((self.nstep,self.outDim))
         for j in range(0,self.outDim):
             # Iterate over each of the input dimensions
             # and add to the numerator array
-            numTemp = [[self.KpArray[iterator,self.outDim*j+i]] for i in range(self.inDim)]
-            denTemp = [[self.tauArray[iterator,self.outDim*j+i],1.] for i in range(self.inDim)]
-            thetas = [self.thetaArray[iterator,self.outDim*j+i] for i in range(self.inDim)]
+            b = [[self.b[iterator,self.outDim*j+i]] for i in range(self.inDim)]
+            a = [[1.,-self.a[iterator,self.outDim*j+i]] for i in range(self.inDim)]
+            q = [self.q[iterator,self.outDim*j+i] for i in range(self.inDim)]
             
             bigU=np.transpose(u)
             uSim=np.zeros_like(bigU)
             for (idx,row) in enumerate(bigU):
-                uSim[idx,:] = np.concatenate((np.zeros(thetas[idx]),row[:-thetas[idx]]))
-            numTemp=np.array([numTemp]);denTemp=np.array([denTemp])
-            sys = control.tf(numTemp,denTemp)
+                uSim[idx,:] = np.concatenate((np.zeros(q[idx]),row[:-q[idx]]))
+            numTemp=np.array([b]);denTemp=np.array([a])
+            sys = control.tf(numTemp,denTemp,1)
             _,y,_ = control.forced_response(sys,U=uSim,T=self.t)
             allY[:,j] = self.gauss_noise(y,self.stdev)
             
         return allY
     
-    def sys_simulation(self,stdev=5,KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10]):
+    def sys_simulation(self,stdev=5,aRange=[0.75,0.9],bRange=[.1,.5],qRange=[1,10]):
         """
         Module which produces simulation of SISO/MIMO system given the input parameters. 
         Contains a loop which iterates for the total number of samples and appends
@@ -236,6 +276,8 @@ class Signal:
         # Access all the attributes from initialization
         numTrials=self.numTrials; nstep=self.nstep;
         timelength=self.timelength; trainFrac=self.trainFrac
+        self.aRange = aRange; self.bRange = bRange
+        self.qRange = qRange
         
         self.milestones = []
         # Loop to create milestones to checkpoint data creation
@@ -249,31 +291,44 @@ class Signal:
         orderList = []
         
         # Make arrays containing parameters tau, theta
-        KpSpace = np.linspace(KpRange[0],KpRange[1],nstep)
-        taupSpace = np.linspace(tauRange[0],tauRange[1],nstep)
-        thetaSpace = np.arange(thetaRange[0],thetaRange[1])
-        self.t = np.linspace(0,timelength*self.maxLen,nstep*self.maxLen)
+        aSpace = np.linspace(aRange[0],aRange[1],nstep)
+        bSpace = np.linspace(bRange[0],bRange[1],nstep)
+        qSpace = np.arange(qRange[0],qRange[1])
+        self.t = np.linspace(0,timelength-1,nstep)
         
         # Make random number arrays for parameters
-        kpRand = np.random.randint(0,nstep,(numTrials*self.outDim*self.inDim))
-        tauRand = np.random.randint(0,nstep,(numTrials*self.outDim*self.inDim))
-        thetaRand = np.random.randint(0,len(thetaSpace),(numTrials*self.outDim*self.inDim))
+        aRand = np.random.randint(0,nstep,(numTrials*self.outDim*self.inDim))
+        bRand = np.random.randint(0,nstep,(numTrials*self.outDim*self.inDim))
+        qRand = np.random.randint(0,len(qSpace),(numTrials*self.outDim*self.inDim))
         
         # Create parameter arrays and reshape
-        self.KpArray = np.array([KpSpace[i] for i in kpRand]).reshape((numTrials,self.outDim*self.inDim))
-        self.tauArray = np.array([taupSpace[i] for i in tauRand]).reshape((numTrials,self.outDim*self.inDim))
-        self.thetaArray = np.array([thetaSpace[i] for i in thetaRand]).reshape((numTrials,self.outDim*self.inDim))
+        self.a = np.array([aSpace[i] for i in aRand]).reshape((numTrials,self.outDim*self.inDim))
+        self.b = np.array([bSpace[i] for i in bRand]).reshape((numTrials,self.outDim*self.inDim))
+        self.q = np.array([qSpace[i] for i in qRand]).reshape((numTrials,self.outDim*self.inDim))
         
         # Make uArray for all data
-        # Make uArray
-        emptyArg = np.zeros(numTrials*self.inDim)
-        self.uArray = np.concatenate(np.split(np.array(list(map(self.PRBS,emptyArg))),self.inDim),axis=2)  
-        
+        # We have models which can predict up to 2 inputs at a time.
+        # This creates PRBS so that two inputs are excited at once
+        # and stacks them into an input array
+        self.uArray = np.zeros((self.numTrials,self.nstep,self.inDim))
+        for trial in range(0,numTrials):
+            seq = self.PRBS()
+            roll = 0
+            mult=0
+            for dim in range(0,self.inDim):
+                if roll==0:
+                    self.uArray[trial,self.len*mult:self.len*mult+self.len,dim]=seq
+                elif roll==1:
+                    self.uArray[trial,self.len*mult:self.len*mult+self.len,dim]=seq[::-1]
+                    mult+=1
+                    roll=0    
+                roll+=1
+                
         # Iterate over each of the simulations and add
         # to simulation arrays
         iterator=range(numTrials)
         self.yArray = np.array(list(map(self.y_map_function,iterator)))
-        print(self.yArray.shape)
+
         # Colors for plotting input/output signals properly
         colors = ['midnightblue','gray','darkgreen','crimson','olive','navy','lightcoral','indigo','darkcyan',
                   'coral','darkorange','navy','r']
@@ -284,8 +339,8 @@ class Signal:
             for it in range(self.uArray.shape[-1]): 
                 label1 = '$u_' + str(it+1) + '(t)$' 
                 label2 = '$y_' + str(it+1) + '(t)$'
-                plt.plot(self.t[:100],self.uArray[outit,:100,it],colors[it],label=label1)
-                plt.plot(self.t[:100],self.yArray[outit,:100,it],colors[self.inDim+it],label=label2)
+                plt.plot(self.t[:],self.uArray[outit,:,it],colors[it],label=label1)
+                plt.plot(self.t[:],self.yArray[outit,:,it],colors[self.inDim+it],label=label2)
             plt.ylabel("Measured Signal (5% Noise)")
             plt.xlabel("Time Step (s)")
             plt.legend()
@@ -303,16 +358,16 @@ class Signal:
         
         # Make it so that any of these attributes can be accessed 
         # without needing to return them all from the function
-        self.taus = self.tauArray
-        self.kps = self.KpArray
-        self.thetas = self.thetaArray
+        self.taus = self.a
+        self.kps = self.b
+        self.thetas = self.q
         self.orderList = orderList
         self.train = train
         self.test = test
         if self.numPlots>0:
-            self.plot_parameter_space(self.tauArray,self.KpArray,self.thetaArray,train,test)
+            self.plot_parameter_space(self.taus,self.kps,self.thetas,train,test)
         
-        return self.uArray,self.yArray,self.tauArray,self.KpArray,self.thetaArray,train,test
+        return self.uArray,self.yArray,self.taus,self.kps,self.thetas,train,test
      
     
     def preprocess(self,xData,yData):
@@ -330,8 +385,8 @@ class Signal:
         trainspace = xData[self.train]
         valspace = xData[self.test] 
         
-        x_train= trainspace.reshape((math.floor(self.numTrials*self.trainFrac),self.nstep*self.maxLen,numDim))    
-        x_val = valspace.reshape((math.floor(self.numTrials*(1-self.trainFrac)),self.nstep*self.maxLen,numDim))
+        x_train= trainspace.reshape((math.floor(self.numTrials*self.trainFrac),self.len,numDim))    
+        x_val = valspace.reshape((math.floor(self.numTrials*(1-self.trainFrac)),self.len,numDim))
         
         try:
             y_val = np.array([yData[i,:] for i in self.test])
@@ -349,8 +404,9 @@ class Signal:
         kps=self.kps; taus=self.taus; thetas=self.thetas
         uArray=self.uArray; yArray=self.yArray
         a,b,c = np.shape(self.uArray)
-        self.xDataMat = np.full((a*self.outDim,b,c),0.)
+        self.xDataMat = np.full((a*self.outDim,self.len,c),0.)
         self.yDataMat = np.full((a*self.outDim,self.inDim),0.)
+        print(self.xDataMat.shape)
         if name=='kp':
             for j in range(0,self.inDim):
                 dim = self.inDim
@@ -358,7 +414,8 @@ class Signal:
             
             for i in range(0,self.outDim):
                 for j in range(0,self.inDim):
-                    self.xDataMat[a*i:a*(i+1),:,j] = yArray[:,:,i]*uArray[:,:,j]      
+                    self.xDataMat[a*i:a*(i+1),:,j] = yArray[:,:,i] - uArray[:,:,j]  
+                    
         elif name=='tau':
             for j in range(0,self.inDim):
                 dim = self.inDim
