@@ -60,7 +60,7 @@ for (idx,losstype) in enumerate(['MIMO 1x1','MIMO 2x2','MIMO 3x3']):
         
         ax.plot(range(1,251),plotData,colors[it],label=names[it],linestyle=linestyle)
         
-    ax.set_ylim([0,3])
+    #ax.set_ylim([0,3])
     ax.legend(title=losstype)
    
     for ax in axes.flat:

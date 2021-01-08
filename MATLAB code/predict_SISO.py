@@ -9,6 +9,7 @@ from Signal import Signal
 from Model import Model
 import time
 import os
+import numpy as np
 
 # These constants are also defined in the Signal module 
 # Don't change here unless you also change them there
@@ -17,7 +18,7 @@ batchSize = 16
 plots = 5
 
 uData = np.loadtxt('/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/MATLAB code/u_1x1.csv')
-yData = np.loadtxt('/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/MATLAB code/y_1x1.csv')
+yData = np.loadtxt('/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/MATLAB code/y_1x1_.csv')
 
 valPath = '/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Model Validation/'
 model_paths = [f.path for f in os.scandir(valPath) if f.is_dir()]

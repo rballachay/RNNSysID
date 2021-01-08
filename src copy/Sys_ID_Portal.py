@@ -11,12 +11,12 @@ import time
 
 # These constants are also defined in the Signal module 
 # Don't change here unless you also change them there
-numTrials = 1000
+numTrials = 10000
 batchSize = 32
 plots = 5
 
-inDims = range(1,6)
-outDims = range(1,6)
+inDims = range(2,10,2)
+outDims = range(2,10,2)
 
 for (inDimension,outDimension) in zip(inDims,outDims):   
     start_time = time.time()

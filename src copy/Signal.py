@@ -95,7 +95,7 @@ class Signal:
     
     def __init__(self,inDim,outDim,numTrials,trainFrac=0.7,numPlots=5,stdev=5):
         self.numTrials = numTrials
-        self.nstep = 3*50*(inDim+outDim)
+        self.nstep = 6*50*(inDim+outDim) 
         self.timelength = self.nstep
         self.trainFrac = trainFrac
         self.valFrac = 1-trainFrac
@@ -106,8 +106,12 @@ class Signal:
         self.inDim = inDim
         self.outDim = outDim
         self.maxLen = 5
-        self.length = 300
+        self.length = 600
         self.STDEVS = []
+        if self.inDim>1:
+            self.trim = 300
+        else:
+            self.trim=0
     
     def PRBS_parameterization(self,numRegisters=9):
         """This function serves to determine the best PRBS 
@@ -151,10 +155,10 @@ class Signal:
         L.runKCycle(int(np.floor(self.length/sample))+1)
         seq = L.seq
         PRBS = np.zeros(self.length)
-        for i in range(0,int(self.length/sample)+1):                
+        for i in range(0,int(self.length/sample)+1):                                
             if seq[i]==0:
                 seq[i]=-1
-                
+            
             if sample*i+sample>=self.length:
                 PRBS[sample*i:] = seq[i]
                 break
@@ -185,9 +189,9 @@ class Signal:
         # If the array has 2 dimensions, this will capture it
         # Otherwise, it will evaluate the length of 1D array
         if stdev=='variable':
-            stdev = abs(np.random.normal(5,2.5))
+            stdev = abs(np.random.normal(5,1))
             self.STDEVS.append(stdev)
-        noise = np.random.normal(0,(stdev/100)*np.amax(array),array.shape)
+        noise = np.random.normal(0,(stdev/100)*np.max(abs(array)),array.shape)
         return array+noise
     
     def serialized_checkpoint(self,iteration):
@@ -229,11 +233,18 @@ class Signal:
             bigU=np.transpose(u)
             uSim=np.zeros_like(bigU)
             for (idx,row) in enumerate(bigU):
-                uSim[idx,:] = np.concatenate((np.zeros(thetas[idx]),row[:-thetas[idx]]))
+                try:
+                    uSim[idx,:] = np.concatenate((np.zeros(thetas[idx]),row[:-thetas[idx]]))
+                except:
+                    uSim[idx,:] = row
             numTemp=np.array([numTemp]);denTemp=np.array([denTemp])
             sys = control.tf(numTemp,denTemp,1)
             _,y,_ = control.forced_response(sys,U=uSim,T=self.t)
-            allY[:,j] = self.gauss_noise(y,self.stdev)
+            
+            steps = int(self.nstep/self.length)
+            l=self.length
+            for step in range(0,steps):
+                allY[l*step:l*(step+1),j] = self.gauss_noise(y[l*step:l*(step+1)],self.stdev)
             
         return allY
 
@@ -307,16 +318,27 @@ class Signal:
         self.tauArray = np.array([taupSpace[i] for i in tauRand]).reshape((numTrials,self.outDim*self.inDim))
         self.thetaArray = np.array([thetaSpace[i] for i in thetaRand]).reshape((numTrials,self.outDim*self.inDim))
         
-        # Make uArray for all data
-        self.uArray = np.zeros((self.numTrials,self.nstep,self.inDim))
-        for trial in range(0,numTrials):
-            seq = self.PRBS()
-            for dim in range(0,self.inDim):
-                dimseq = np.zeros(self.nstep)
-                for i in range(0,int(self.nstep/self.length)):
-                    dimseq[i*self.length:(i*self.length+self.length)]=seq
-                self.uArray[trial,:,dim] = dimseq
-                seq = -seq[::-1]
+        
+        if self.inDim>1:
+            self.uArray = np.zeros((self.numTrials,self.nstep,self.inDim))
+            for trial in range(0,numTrials):
+                seq = self.PRBS()
+                seq[-300:] = 0 
+                for dim in range(0,self.inDim):
+                    dimseq = np.zeros(self.nstep)
+                    dimseq[dim*self.length:dim*self.length+self.length] = seq
+                    self.uArray[trial,:,dim] = dimseq
+        else:
+            # Make uArray for all data
+            self.uArray = np.zeros((self.numTrials,self.nstep,self.inDim))
+            for trial in range(0,numTrials):
+                seq = self.PRBS()
+                for dim in range(0,self.inDim):
+                    dimseq = np.zeros(self.nstep)
+                    for i in range(0,int(self.nstep/self.length)):
+                        dimseq[i*self.length:(i*self.length+self.length)]=seq
+                    self.uArray[trial,:,dim] = dimseq
+                    seq = -seq[::-1]
                 
         
         # Iterate over each of the simulations and add
@@ -326,32 +348,37 @@ class Signal:
         if not(self.order):
             self.yArray = np.array(list(map(self.y_map_function,iterator)))
         else:
+            #self.KpArray = np.zeros((numTrials,self.outDim*self.inDim*self.order))
+            self.tauArray = np.zeros((numTrials,self.outDim*self.inDim*self.order))
+            #self.thetaArray = np.array([thetaSpace[i] for i in thetaRand]).reshape((numTrials,self.outDim*self.inDim))
             self.ySteps = np.zeros((self.numTrials,self.nstep,self.inDim))
             self.yArray = np.array(list(map(self.y_map_higher_function,iterator)))
+            
         # Colors for plotting input/output signals properly
         colors = ['midnightblue','gray','darkgreen','crimson','olive','navy','lightcoral','indigo','darkcyan',
                   'coral','darkorange','navy','r']
         
         # Only plot every 100 input signals
         for outit in range(self.numPlots):
-            plt.figure(figsize=(5,5),dpi=200)
+            plt.figure(figsize=(10,5),dpi=200)
             for it in range(self.uArray.shape[-1]): 
                 label1 = '$u_' + str(it+1) + '(t)$' 
                 label2 = '$y_' + str(it+1) + '(t)$'
-                plt.plot(self.t[:200],self.uArray[outit,:200,it],colors[it],label=label1)
-                plt.plot(self.t[:200],self.yArray[outit,:200,it],colors[self.inDim+it],label=label2)
+                plt.plot(self.t,self.uArray[outit,:,it],colors[it],label=label1)
+                plt.plot(self.t,self.yArray[outit,:,it],colors[self.inDim+it],label=label2)
             plt.ylabel("Measured Signal (5% Noise)")
             plt.xlabel("Time Step (s)")
             plt.legend()
             plt.show()
         
+        print(len(self.yArray))
         # Randomly pick training and validation indices 
-        index = range(0,len(self.yArray))
+        index = range(0,len(self.yArray)*self.inDim*self.outDim)
         if self.trainFrac!=1:  
-            train = random.sample(index,int(trainFrac*numTrials))
+            train = random.sample(index,int(trainFrac*len(self.yArray)*self.inDim*self.outDim))
             test = [item for item in list(index) if item not in train]
         else:
-            train=range(0,len(self.yArray))
+            train=range(0,len(self.yArray*self.inDim*self.outDim))
             test=[]
         
         
@@ -363,8 +390,8 @@ class Signal:
         self.orderList = orderList
         self.train = train
         self.test = test
-        if self.numPlots>0:
-            self.plot_parameter_space(self.tauArray,self.KpArray,self.thetaArray,train,test)
+        #if self.numPlots>0:
+            #self.plot_parameter_space(self.tauArray,self.KpArray,self.thetaArray,train,test)
         
         return self.uArray,self.yArray,self.tauArray,self.KpArray,self.thetaArray,train,test
      
@@ -375,8 +402,9 @@ class Signal:
         # If array has more than 2 dimensions, use 
         # axis=2 when reshaping, otherwise set to 1
         try:
-            _,_,numDim= xData.shape
+            numTrials,_,numDim= xData.shape
         except:
+            numTrials,_ = xData.shape
             numDim=1
            
         # Select training and validation data based on training
@@ -384,8 +412,8 @@ class Signal:
         trainspace = xData[self.train]
         valspace = xData[self.test] 
         
-        x_train= trainspace.reshape((math.floor(self.numTrials*self.trainFrac),self.nstep,numDim))    
-        x_val = valspace.reshape((math.floor(self.numTrials*(1-self.trainFrac)),self.nstep,numDim))
+        x_train= trainspace.reshape((math.floor(numTrials*self.trainFrac),self.length,1))    
+        x_val = valspace.reshape((math.floor(numTrials*(1-self.trainFrac)),self.length,1))
         
         try:
             y_val = np.array([yData[i,:] for i in self.test])
@@ -394,7 +422,7 @@ class Signal:
             y_val = np.array([yData[i] for i in self.test])
             y_train = np.array([yData[i] for i in self.train])
             
-        return x_train,x_val,y_train,y_val,numDim   
+        return x_train[:,:-self.trim,:],x_val[:,:-self.trim,:],y_train,y_val,numDim   
     
     def stretch_MIMO(self,name):
         """Function that takes the input parameters and stacks into one 
@@ -412,7 +440,7 @@ class Signal:
             
             for i in range(0,self.outDim):
                 for j in range(0,self.inDim):
-                    self.xDataMat[a*i:a*(i+1),:,j] = yArray[:,:,i]*uArray[:,:,j]      
+                    self.xDataMat[a*i:a*(i+1),:,j] = yArray[:,:,i] * uArray[:,:,j]      
         elif name=='tau':
             for j in range(0,self.inDim):
                 dim = self.inDim
@@ -430,10 +458,54 @@ class Signal:
                 for j in range(0,self.inDim):
                     self.xDataMat[a*i:a*(i+1),:,j] = yArray[:,:,i] - uArray[:,:,j]
         
+        print(self.xDataMat.shape)
         return self.xDataMat,self.yDataMat
     
+    def stretch_MIMO_sequential(self,name):
+        """Function that takes the input parameters and stacks into one 
+        array, then processes so that data can be used for any size
+        MIMO system. Not used if SISO system"""
+        kps=self.kps; taus=self.taus; thetas=self.thetas
+        uArray=self.uArray; yArray=self.yArray
+        a,b,c = np.shape(self.uArray)
+        print(self.uArray.shape)
+        self.xDataMat = np.full((a*self.outDim*self.inDim,self.length),0.)
+        self.yDataMat = np.full((a*self.outDim*self.inDim),0.)
+        k = self.length
+        if name=='kp':
+            for i in range(0,self.outDim):
+                for j in range(0,self.inDim):
+                    dim=self.inDim
+                    self.yDataMat[a*(dim*i+j):a*(dim*i+j+1)] = kps[:,(dim*i+j):(dim*i+j+1)][:,0]
+            
+            for i in range(0,self.outDim):
+                for j in range(0,self.inDim):
+                    self.xDataMat[a*(self.inDim*i+j):a*(self.inDim*i+j+1),...] = yArray[:,j*k:(j+1)*k,i] - uArray[:,j*k:(j+1)*k,j]  
+       
+        elif name=='tau':
+            for i in range(0,self.outDim):
+                for j in range(0,self.inDim):
+                    dim=self.inDim
+                    self.yDataMat[a*(dim*i+j):a*(dim*i+j+1)] = kps[:,(dim*i+j):(dim*i+j+1)][:,0]
+
+            for i in range(0,self.outDim):
+                for j in range(0,self.inDim):
+                    self.xDataMat[a*(self.inDim*i+j):a*(self.inDim*i+j+1),...] = yArray[:,j*k:(j+1)*k,i] - uArray[:,j*k:(j+1)*k,j]    
+        else:
+            for i in range(0,self.outDim):
+                for j in range(0,self.inDim):
+                    dim=self.inDim
+                    self.yDataMat[a*(dim*i+j):a*(dim*i+j+1)] = kps[:,(dim*i+j):(dim*i+j+1)][:,0]
+
+            for i in range(0,self.outDim):
+                for j in range(0,self.inDim):
+                    self.xDataMat[a*(self.inDim*i+j):a*(self.inDim*i+j+1),...] = yArray[:,j*k:(j+1)*k,i] - uArray[:,j*k:(j+1)*k,j]    
+
+        return self.xDataMat,self.yDataMat   
     
-    def system_validation(self,KpRange=[.5,.99],tauRange=[.5,.99],thetaRange=[1,10],order=1):
+    
+    
+    def system_validation(self,KpRange=[.5,.99],tauRange=[.5,.99],thetaRange=[1,10],order=False):
         """This function makes it easier to run a bunch of simulations and 
         automatically return the validation and testing sets without 
         calling each function separately. """
@@ -450,7 +522,6 @@ class Signal:
         for (i,name) in enumerate(self.names):
             # Develop separate model for each output variable
             x,y = self.stretch_MIMO(name)
-            
             self.xData[name] = x
             self.yData[name] = y
         
@@ -488,17 +559,26 @@ class Signal:
             for i in range(self.inDim): 
                 kp = self.KpArray[iterator,self.outDim*j+i]
                 tau = self.tauArray[iterator,self.outDim*j+i]
-                numTemp=[];denTemp=[1.,]
-                for o in range(0,self.order):
+                numTemp=np.zeros(self.order);denTemp=np.zeros(self.order+1)
+                denTemp[0]=1.
+                for o in range(1,self.order+1):
                     if self.order==1:
                         numo = kp
                         deno=tau
                     else: 
-                        numo = np.random.uniform(self.KpRange[0],self.KpRange[1])/self.order
-                        deno = np.random.uniform(self.tauRange[0],self.tauRange[1])/self.order
-                    numTemp.append(numo)
-                    denTemp.append(-deno)
-                num.append(numTemp)
+                        deno = np.random.uniform(0.2,self.tauRange[1]/2)
+                        denTemp[o] = deno
+                        
+                        while np.sum(abs(denTemp[1:]))>=1:
+                            deno=deno/2
+                            denTemp[o]=deno
+                
+                        self.tauArray[iterator,self.inDim*self.order*j+i*self.order+o-1] = deno
+                        
+                    #denTemp.append(-deno)
+                    #mean = abs(np.sum(denTemp[1:]))
+
+                num.append([kp])
                 denom.append(denTemp)
             thetas = [self.thetaArray[iterator,self.outDim*j+i] for i in range(self.inDim)]
             
@@ -512,7 +592,10 @@ class Signal:
             _,sY,_ = control.forced_response(sys,U=self.test_sequence,T=np.linspace(0,self.length-1,self.length))
             
             allY[:,j] = self.gauss_noise(y,self.stdev)
-            stepY[:,j] = self.gauss_noise(sY,self.STDEVS[-1])
+            try:
+                stepY[:,j] = self.gauss_noise(sY,self.STDEVS[-1])
+            except:
+                stepY[:,j] = self.gauss_noise(sY,self.stdev)
             for idx in range(stepY.shape[-1]):
                 row = stepY[...,i]
                 temp=np.zeros_like(row)

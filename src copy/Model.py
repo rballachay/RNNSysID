@@ -173,13 +173,15 @@ class Model:
         
         # Iterate over tau and kp parameters
         for (k,parameter) in enumerate(parameters):
-            xData,yData = sig.stretch_MIMO(parameter)
+            xData,yData = sig.stretch_MIMO_sequential(parameter)
             x_train,x_val,y_train,y_val,numDim = sig.preprocess(xData,yData)
             self.outDim = sig.outDim;self.inDim=sig.inDim
             self.length,self.width,self.height=x_train.shape
             self.numTrials=sig.numTrials;self.nstep=sig.nstep
             self.maxLen = sig.maxLen
             self.trainFrac = sig.trainFrac
+            
+            print(self.height)
             """
             # Check the dimension of data to ensure that an architecture 
             # exists for the shape of the data. If not, then it will 
@@ -205,7 +207,7 @@ class Model:
             checkpoint_path = checkptDir + self.names[k] + '.cptk'
             cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
                         save_weights_only=True,save_best_only=True,verbose=1) 
-            MTC = MyThresholdCallback(0.97)
+            MTC = MyThresholdCallback(0.995)
             
             print("Fit model on training data")
             history = model.fit(
@@ -320,9 +322,9 @@ class Model:
         # Model is used to predict all out the output variables linearly,
         # so the array is cut depending on which transfer function parameters 
         # correspond to each output variable, then stacked as new trials
+        theta_yhat = self.modelDict['theta'](sig.xData['theta'])
         kp_yhat = self.modelDict['kp'](sig.xData['kp'])
         tau_yhat = self.modelDict['tau'](sig.xData['tau'])
-        theta_yhat = self.modelDict['theta'](sig.xData['theta'])
         
         predDict = dict()
         errDict = dict()
@@ -350,6 +352,10 @@ class Model:
                 fig.add_subplot(111, frameon=False)
                 plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
                 ax.plot(sig.yData[parameter],predDict[parameter],'.b',label=parameter)
+                # Turns off grid on the left Axis.
+                ax.grid(False)
+                # Turns off grid on the secondary (right) Axis.
+                #ax.right_ax.grid(False)
                 r2 =("r\u00b2 = %.3f" % r2_score(sig.yData[parameter],predDict[parameter]))
                 ax.errorbar(sig.yData[parameter],predDict[parameter],yerr=errDict[parameter],fmt='none',ecolor='green',label=('Avg. Unc.=%.2f' %self.stdDict[parameter]))
                 if parameter=='theta':
@@ -476,12 +482,12 @@ class Model:
         "Probabilistic model for SISO data"
         negloglik = lambda y, rv_y: -rv_y.log_prob(y[:])
         model = tf.keras.Sequential([
-        tf.keras.layers.LSTM(100, activation='tanh', input_shape=(None, self.height)),          
+        tf.keras.layers.LSTM(100, activation='tanh', input_shape=(None, 1)),          
         tf.keras.layers.Dense(100,activation='softplus'),
-        tfp.layers.DenseVariational(2*self.inDim,Model.posterior_mean_field,Model.prior_trainable,activation='linear',kl_weight=1/100),
+        tfp.layers.DenseVariational(2*1,Model.posterior_mean_field,Model.prior_trainable,activation='linear',kl_weight=1/100),
         # Changed from 1e-3 to 1e-1 and 1*tf.nn.softplus to 10
-        tfp.layers.DistributionLambda(lambda t: tfd.Normal(loc = t[..., :self.inDim],
-        scale = (1e-3 + tf.math.softplus(0.1 * t[...,self.inDim:])),)),])
+        tfp.layers.DistributionLambda(lambda t: tfd.Normal(loc = t[..., :1],
+        scale = (1e-3 + tf.math.softplus(0.1 * t[...,1:])),)),])
         model.compile(optimizer='adam', loss=negloglik,metrics=[Model.coeff_determination])
         return model
     

@@ -13,7 +13,7 @@ import os
 
 # These constants are also defined in the Signal module 
 # Don't change here unless you also change them there
-NUMTRIALS = 1000
+NUMTRIALS = 100
 batchSize = 16
 plots = 5
 
@@ -24,7 +24,7 @@ inDims = range(1,6)
 outDims = range(1,6)
 
 for (inDimension,outDimension) in zip(inDims,outDims): 
-    name ='MIMO ' + str(inDimension) + 'x' + str(outDimension)
+    name ='MIMO ' + '1' + 'x' + '1'
     path = valPath + name + '/Checkpoints/'
     
     start_time = time.time()
@@ -33,7 +33,7 @@ for (inDimension,outDimension) in zip(inDims,outDims):
 
     # In this case, since we are only loading the model, not trying to train it,
     # we can use function simulate and preprocess 
-    xData,yData = sig.system_validation(KpRange=[.5,.99],tauRange=[.5,.99],thetaRange=[1,10],order=2)
+    xData,yData = sig.system_validation(KpRange=[.5,.99],tauRange=[.5,.99],thetaRange=[1,10],order=False)
     print("--- %s seconds ---" % (time.time() - start_time))
     
     # Initialize the models that are saved using the parameters declared above
@@ -41,7 +41,7 @@ for (inDimension,outDimension) in zip(inDims,outDims):
     predictor.load_model(sig,path)
     
     # Function to make predictions based off the simulation 
-    predictor.predict_system(sig,savePredict=True,stepResponse=True)
+    predictor.predict_system(sig,savePredict=True,stepResponse=False)
     
     print("--- %s seconds ---" % (time.time() - start_time))
     
