@@ -8,6 +8,7 @@ Created on Wed Jan  6 13:36:34 2021
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+import seaborn as sns
 """
 LSTM_vLoss = '/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/2020-08-13 12:29/tau_val_loss.txt'
 LSTM_loss = '/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Models/2020-08-13 12:29/tau_loss.txt'
@@ -34,15 +35,15 @@ n = np.full((100000,2500,10),0,dtype=float)
 
 print("%f bytes" % (n.size * n.itemsize*1e-9))
 """
-
+sns.set()
 for (idx,losstype) in enumerate(['MIMO 1x1']):
     direc = '/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Model Validation/'+losstype
     files = [f for f in os.listdir(direc) if f.endswith('.txt')]
     files.sort()
-    names = ['Kp Loss','Kp Val Loss','τ Loss', 'τ Val Loss','θ Loss','θ Val Loss']
+    names = ['a Loss','a Val Loss','b Loss', 'b Val Loss','k Loss','k Val Loss']
     colors = ['darkred','indianred','midnightblue','steelblue','darkgreen','lightgreen']
     for (it,file) in enumerate(files):
-        plotData = np.zeros(250)
+        plotData = np.zeros(500)
         data = np.loadtxt(direc+ '/'+file)
         ind = np.argmin(data)
         data[ind:] = min(data)
@@ -52,9 +53,9 @@ for (idx,losstype) in enumerate(['MIMO 1x1']):
             linestyle='solid'
         else:
             linestyle='dashed'
-        plt.figure(1)
-        plt.plot(range(1,251),plotData,colors[it],label=names[it],linestyle=linestyle)
+        plt.figure(1,dpi=300,figsize=(10,5))
+        plt.plot(range(0,500),plotData[0:500],colors[it],label=names[it],linestyle=linestyle)
 
-        
+plt.legend()      
 plt.ylabel("Loss (Negative Log Likelihood)")
 plt.xlabel("Number of Epochs")

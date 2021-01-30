@@ -2,8 +2,8 @@
 % get data in .mat form, I'm going to open each CSV and make a .mat file
 % for each input/output pair
 
-csv_in = readtable('u_1x1_order2.csv');
-csv_out = readtable('y_1x1_order2.csv');
+csv_in = readtable('u_1x1_d.csv');
+csv_out = readtable('y_1x1_d.csv');
 
 for i = 1:1000
     u = csv_in{i,:};
