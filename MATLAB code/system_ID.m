@@ -12,21 +12,35 @@ for i = 1:1000
     save(name,'u','y');
 end
 
-taus = zeros(100,1);
-thetas = zeros(100,1);
-kps = zeros(100,1);
+taus = zeros(1000,1);
+thetas = zeros(1000,1);
+kps = zeros(1000,1);
+noises = zeros(1000,1);
+errors = zeros(1000,2);
 
-tic
+uArr = zeros(300,1000);
+yArr = zeros(300,1000);
 for i = 1:1000
     filename = 'SISO Data/'+string(i)+'.mat';
     load(filename);
-    u = reshape(u,[100,1]);
-    y = reshape(y,[100,1]);
+    uArr(:,i) = reshape(u,[300,1]);
+    yArr(:,i) = reshape(y,[300,1]);
+end
+tic
+
+for i = 1:1000
+    y=yArr(:,i);
+    u=uArr(:,i);
     Ts=1; % Time step is one second
-    data = iddata(y,u);
-    sysTF = procest(data,'P1D');
-    taus(i) = sysTF.Tp1;
-    thetas(i) = sysTF.Td;
-    kps(i) = sysTF.Kp;
+    data = [y,u];
+    sysTF = tfest(data,1,0,1,'Ts',1.0);
+    kps(i) = sysTF.Numerator;
+    taus(i) = sysTF.Denominator(2);
+    thetas(i) = sysTF.IODelay;
+    noises(i) = sysTF.NoiseVariance;
+    temp = getcov(sysTF);
+    errors(i,1) = temp(1,1);
+    errors(i,2) = temp(2,2);
+    
 end
 toc

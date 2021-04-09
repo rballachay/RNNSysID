@@ -10,15 +10,16 @@ from Model import Model
 import time
 import os
 import numpy as np
+import threading
 
 # These constants are also defined in the Signal module 
 # Don't change here unless you also change them there
-NUMTRIALS = 1000
+NUMTRIALS = 10
 batchSize = 16
 plots = 5
 
-uData = np.loadtxt('/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/MATLAB code/u_1x1.csv',delimiter=',')
-yData = np.loadtxt('/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/MATLAB code/y_1x1.csv',delimiter=',')
+uData = np.loadtxt('/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/MATLAB code/u_1x1_d.csv',delimiter=' ')
+yData = np.loadtxt('/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/MATLAB code/y_1x1_d.csv',delimiter=' ')
 
 valPath = '/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Model Validation/'
 model_paths = [f.path for f in os.scandir(valPath) if f.is_dir()]
@@ -36,26 +37,31 @@ for (inDimension,outDimension) in zip(inDims,outDims):
 
     # In this case, since we are only loading the model, not trying to train it,
     # we can use function simulate and preprocess 
-    sig.system_validation(KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10])
+    sig.system_validation([1,10],[1,10],[1,10])
     print("--- %s seconds ---" % (time.time() - start_time))
     
     # Initialize the models that are saved using the parameters declared above
     predictor = Model()
     predictor.load_model(sig,path)
-    start_time = time.time()
+    #start_time = time.time()
     
     kps = np.zeros(1000)
     taus = np.zeros(1000)
     thetas = np.zeros(1000)
+
+    # Function to make predictions based off the simulation   
+    a,b = yData.shape
+    inlet = yData - uData
+    inlet = inlet.reshape((a,b,1))
     
-    # Function to make predictions based off the simulation 
-    for i,(u,y) in enumerate(zip(uData,yData)):
-        in1 =  (u*y).reshape(1,100,1)
-        in2 = (y-u).reshape(1,100,1)
-        
-        kps[i] = predictor.modelDict['kp'].predict(in1)[0]
-        taus[i] = predictor.modelDict['tau'].predict(in2)[0]
-        thetas[i] = predictor.modelDict['theta'].predict(in2)[0]
+    start_time = time.time()
+    kps = np.array(predictor.modelDict['b'](inlet).mean()[:])
+    taus = np.array(predictor.modelDict['a'](inlet).mean()[:])
+    thetas = np.array(predictor.modelDict['k'](inlet).mean()[:])
+    
+    kps_unc = np.array(2*predictor.modelDict['b'](inlet).stddev()[:])
+    taus_unc = np.array(2*predictor.modelDict['a'](inlet).stddev()[:])
+    thetas_unc = np.array(2*predictor.modelDict['k'](inlet).stddev()[:])
     
     print("--- %s seconds ---" % (time.time() - start_time))
     

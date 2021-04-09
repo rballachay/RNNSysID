@@ -15,6 +15,7 @@ from tensorflow import keras
 from tensorflow.keras import layers
 import tensorflow_probability as tfp
 tfd = tfp.distributions
+tfk = tf.keras
 tfb = tfp.bijectors
 from sklearn.metrics import r2_score
 from sklearn.preprocessing import StandardScaler
@@ -26,6 +27,7 @@ from tensorflow.keras import backend as K
 from tensorflow.keras import losses
 import datetime
 import control as control
+import seaborn as sns
 
 class MyThresholdCallback(tf.keras.callbacks.Callback):
     """
@@ -51,7 +53,7 @@ class Model:
     Builds models using keras with tensorflow backend. Currently
     only works for SISO systems. Will work with MIMO in the future.
     
-    The Purpose of this class is to fit theta, tau and kp for first
+    The Purpose of this class is to fit k, a and b for first
     order systems using data simulated in the Signal class. Models are
     stored using the h5 format and can be used to estimate accuracy. 
     
@@ -73,7 +75,7 @@ class Model:
 
     def __init__(self,Modeltype='probability',sig=False):   
         self.Modeltype = Modeltype
-        self.names = ["kp","tau","theta"]
+        self.names = ["b","a","k"]
         self.modelDict = {}
         self.special_value = -99
         self.cwd = str(os.getcwd())
@@ -85,21 +87,23 @@ class Model:
         directory, it will load them indiscriminately."""
         modelList = []
         self.inDim = sig.inDim; self.outDim = sig.outDim
+        self.nstep = sig.nstep; self.trainFrac = sig.trainFrac
+        self.length,self.width,self.height=sig.xData['b'].shape
         if not(directory):
             loadDir =  askdirectory(title='Select Folder With Trained Model')
         else:
             loadDir = directory
             
-        models = ['kp.cptk','tau.cptk','theta.cptk']
+        models = ['b.cptk','a.cptk','k.cptk']
         for filename in models:
             if filename=='.DS_Store':
                 continue
             print(filename)
             
             if not(check):
-                model = self.mutable_model(sig.xData['kp'],sig.yData['kp'])
+                model = self.mutable_model()
             else:
-                model = self.mutable_model(self.x_train,self.y_train)
+                model = self.mutable_model()
                 
             model.load_weights(loadDir+filename)
             modelList.append(model)
@@ -107,15 +111,17 @@ class Model:
             self.modelDict[self.names[i]] = modelList[i]
      
         
-    def load_and_train(self,sig,epochs=50,probabilistic=True,saveModel=True,batchSize=16,plotLoss=False,plotVal=False):
+    def load_and_train(self,sig,epochs=50,probabilistic=True,saveModel=True,
+                       batchSize=16,plotLoss=False,plotVal=False):
         """Calls load_SISO and continues training model, saving the updated 
         model to a new folder to avoid overwriting"""
         
-        self.train_model(sig, saveModel=saveModel,epochs=epochs,checkpoint=True,batchSize=batchSize)
+        self.train_model(sig, saveModel=saveModel,epochs=epochs,
+                         checkpoint=True,batchSize=batchSize)
 
     
     def train_model(self,sig=False,plotLoss=True,plotVal=True,epochs=50,saveModel=True,
-                    checkpoint=False,batchSize=16):
+                    checkpoint=False,batchSize=16,trainConvolutional=False):
         """
         Takes Signal object with input and output data, separates data in training
         and validation sets, transform data for neural network and uses training 
@@ -123,8 +129,8 @@ class Model:
         
         Separate models are produced for each output variable. Systems are 
         considered to behave as linear combinations of linear systems.
-            Kp: System response (y) and kp used to construct model
-            tau: System response (y) and tau used to construct model
+            b: System response (y) and b used to construct model
+            a: System response (y) and a used to construct model
         
         Parameters
         ----------
@@ -149,8 +155,8 @@ class Model:
         saveModel: bool, default=True
             Decide whether or not to save the models from training 
         """
-        parameters = ['kp','tau','theta']
-        
+        parameters = ['b','a','k']
+        self.numBatches  = int(sig.numTrials*0.7/batchSize)
         # You have to construct a signal with all the necessary parameters before 
         if not(sig):
             print("Please initialize the class signal with model parameters first")
@@ -169,11 +175,31 @@ class Model:
         modelList = []
         first=True
         
-        # Iterate over tau and kp parameters
+        # Iterate over b and a parameters
         for (k,parameter) in enumerate(parameters):
-            xData,yData = sig.stretch_MIMO(parameter)
-            x_train,x_val,y_train,y_val,numDim = sig.preprocess(xData,yData)
+            if not(trainConvolutional):
+                xData,yData = sig.stretch_MIMO_multi(parameter)
+                #colors = ['olive','navy','lightcoral','indigo']
+                #plt.figure(k,dpi=300,figsize=(10,5))
+                #for jj in range(0,10): 
+                #    label1 = '$y_' + str(jj+1) + '(t)$' +'-'+'$u_' + str(1) + '(t)$'
+                #    plt.plot(xData[jj*sig.numTrials*sig.outDim,:-300],colors[jj],label=label1)
+                
+                #plt.xlabel('Time Step (s)')
+                #plt.ylabel('Signal Difference')
+                #plt.legend()
+                    
+                x_train,x_val,y_train,y_val,numDim = sig.preprocess(xData,yData)
+                
+            else:
+                xData,yData = sig.stretch_convolutional(parameter)
+                x_train,x_val,y_train,y_val,numDim = sig.preprocess(xData,yData,mutDim=5)
+                
             self.outDim = sig.outDim;self.inDim=sig.inDim
+            self.length,self.width,self.height=x_train.shape
+            self.numTrials=sig.numTrials;self.nstep=sig.nstep
+            self.maxLen = sig.maxLen
+            self.trainFrac = sig.trainFrac
             
             """
             # Check the dimension of data to ensure that an architecture 
@@ -182,7 +208,8 @@ class Model:
             if checkpoint:
                 if first:
                     self.x_train = x_train; self.y_train = y_train
-                    valPath = '/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Model Validation/'
+                    valPath = '/Users/RileyBallachay/Documents/Fifth Year
+                    /RNNSystemIdentification/Model Validation/'
                     name ='MIMO ' + str(sig.inDim) + 'x' + str(sig.outDim)
                     path = valPath + name + '/Checkpoints/'
                     self.load_model(sig,directory=path,check=True)
@@ -191,7 +218,10 @@ class Model:
                 model = self.modelDict[parameter]
             else:
             """
-            model = self.mutable_model(x_train,y_train)
+            if not(trainConvolutional):
+                model = self.mutable_model()
+            else:
+                model = self.mutable_convolutional()
                 
             print(model.summary())
             
@@ -200,7 +230,7 @@ class Model:
             checkpoint_path = checkptDir + self.names[k] + '.cptk'
             cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
                         save_weights_only=True,save_best_only=True,verbose=1) 
-            MTC = MyThresholdCallback(0.97)
+            MTC = MyThresholdCallback(0.995)
             
             print("Fit model on training data")
             history = model.fit(
@@ -257,12 +287,14 @@ class Model:
             if plotVal:
                 fig, axes = plt.subplots(1, sig.inDim,dpi=200) 
                 fig.add_subplot(111, frameon=False)
-                plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
+                plt.tick_params(labelcolor='none', top=False,
+                                bottom=False, left=False, right=False)
                 for (i,ax) in enumerate(axes):
                     ax.plot(y_val[:,i],predictions[:,i],'.b',label=parameter)
                     print(stddevs.shape)
                     r2 =("r\u00b2 = %.3f" % r2_score(y_val[:,i],predictions[:,i]))
-                    ax.errorbar(y_val[:,i],predictions[:,i],yerr=stddevs[:,i]*2,fmt='none',ecolor='green')
+                    ax.errorbar(y_val[:,i],predictions[:,i],yerr=stddevs[:,i]*2,
+                                fmt='none',ecolor='green')
                     ax.plot(np.linspace(0,10),np.linspace(0,10),'--r',label = r2)
                     ax.legend(prop={'size': 8})
                 
@@ -282,7 +314,8 @@ class Model:
         mse = sum((y_true-y_pred)**2)
         return mse
     
-    def predict_system(self,sig,plotPredict=True,savePredict=False,probabilityCall=False):
+    def predict_system(self,sig,plotPredict=True,savePredict=False,probabilityCall=False,
+                       stepResponse=True):
         """
         Takes Signal object with input and output data, uses stored model
         to predict parameters based off simulated data, then plots
@@ -314,49 +347,236 @@ class Model:
         # Model is used to predict all out the output variables linearly,
         # so the array is cut depending on which transfer function parameters 
         # correspond to each output variable, then stacked as new trials
-        kp_yhat = self.modelDict['kp'](sig.xData['kp'])
-        tau_yhat = self.modelDict['tau'](sig.xData['tau'])
-        theta_yhat = self.modelDict['theta'](sig.xData['theta'])
+        k_yhat = self.modelDict['k'](sig.xData['k'])
+        b_yhat = self.modelDict['b'](sig.xData['b'])
+        a_yhat = self.modelDict['a'](sig.xData['a'])
         
         predDict = dict()
         errDict = dict()
         self.stdDict = dict()
-        predDict['kp'] = np.array(kp_yhat.mean()).flatten()
-        errDict['kp'] = np.array(2*kp_yhat.stddev()).flatten()
-        self.stdDict['kp'] = np.mean(errDict['kp'])
+        predDict['b'] = np.array(b_yhat.mean()).flatten()
+        errDict['b'] = np.array(2*b_yhat.stddev()).flatten()
+        self.stdDict['b'] = np.mean(errDict['b'])
         
-        predDict['tau'] = np.array(tau_yhat.mean()).flatten()
-        errDict['tau'] = np.array(2*tau_yhat.stddev()).flatten()
-        self.stdDict['tau'] = np.mean(errDict['tau'])
+        predDict['a'] = np.array(a_yhat.mean()).flatten()
+        errDict['a'] = np.array(2*a_yhat.stddev()).flatten()
+        self.stdDict['a'] = np.mean(errDict['a'])
         
-        predDict['theta'] = np.array(theta_yhat.mean()).flatten()
-        errDict['theta'] = np.array(2*theta_yhat.stddev()).flatten()
-        self.stdDict['theta'] = np.mean(errDict['theta'])
+        predDict['k'] = np.array(k_yhat.mean()).flatten()
+        errDict['k'] = np.array(2*k_yhat.stddev()).flatten()
+        self.stdDict['k'] = np.mean(errDict['k'])
+           
+        nameDict = dict()
+        nameDict['b'] = 'b'
+        nameDict['a'] = 'a'
+        nameDict['k'] = 'k'
+        sns.set_style("dark")
+        
+        if stepResponse and sig.inDim==1:
+            self.step_response_validation(sig,predDict,errDict)
+        else:
+            fig, axes = plt.subplots(1, 3,figsize=(15,5),dpi=400)  
+            for (idx,parameter) in enumerate(['a','b','k']):
+                sig.yData[parameter] = sig.yData[parameter].flatten()
+                sig.xData[parameter] = sig.xData[parameter].flatten()
+                ax = axes[idx]
+                fig.add_subplot(111, frameon=False)
+                plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
+                ax.plot(sig.yData[parameter],predDict[parameter],'.k',label=nameDict[parameter])
+                r2 =("r\u00b2 = %.3f" % r2_score(sig.yData[parameter],predDict[parameter]))
+                ax.errorbar(sig.yData[parameter],predDict[parameter],
+                            yerr=errDict[parameter],fmt='none',ecolor='green',
+                            label=('Avg. Unc.=%.2f' %self.stdDict[parameter]))
+                if parameter=='k':
+                    ax.plot(np.linspace(0,10),np.linspace(0,10),'--r',label = r2)
+                else:
+                    ax.plot(np.linspace(0,1),np.linspace(0,1),'--r',label = r2)
+                ax.legend()
             
-        fig, axes = plt.subplots(1, 3,figsize=(15,5),dpi=400)  
-        for (idx,parameter) in enumerate(['kp','tau','theta']):
-            sig.yData[parameter] = sig.yData[parameter].flatten()
-            sig.xData[parameter] = sig.xData[parameter].flatten()
-            ax = axes[idx]
-            fig.add_subplot(111, frameon=False)
-            plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
-            ax.plot(sig.yData[parameter],predDict[parameter],'.b',label=parameter)
-            r2 =("r\u00b2 = %.3f" % r2_score(sig.yData[parameter],predDict[parameter]))
-            ax.errorbar(sig.yData[parameter],predDict[parameter],yerr=errDict[parameter],fmt='none',ecolor='green',label=('Avg. Unc.=%.2f' %self.stdDict[parameter]))
-            ax.plot(np.linspace(0,10),np.linspace(0,10),'--r',label = r2)
-            ax.legend()
+            for ax in axes.flat:
+                ax.label_outer()
+                ax.xaxis.grid()
+                ax.yaxis.grid()
+                
+            plt.ylabel("Predicted Parameter Value")
+            plt.xlabel("True Parameter Value")
+        return predDict, errDict
+
+    def predict_multinomial(self,sig,plotPredict=True,savePredict=False,probabilityCall=False,
+                       stepResponse=True):
+        """
+        Takes Signal object with input and output data, uses stored model
+        to predict parameters based off simulated data, then plots
+        system output based on predicted parameters.
         
-        for ax in axes.flat:
-            ax.label_outer()
+        Plots response using predicted parameters along with real response,
+        as well as real and predicted parameters.
         
-        plt.ylabel("Predicted Parameter Value")
-        plt.xlabel("True Parameter Value")
+        Parameters
+        ----------
+        sig : Signal (object), default=False
+            Must provide instance of signal class in order to build model or use
+            for prediction. Else, will fail to train. 
+        
+        plotPredict : bool, default=True
+            Plots predicted response with real response.
+        
+        savePredict : bool,default=False
+            Determine whether or not to save predicted responses.
+            
+        probabilityCall : bool, default=False
+            Included to avoid building probability object while trying to 
+            build probability object, leading to endless loop.
+        """
+        if not(isinstance(sig,Signal)):
+            print("You need to predict with an instance of signal!")
+            return
+        
+        # Model is used to predict all out the output variables linearly,
+        # so the array is cut depending on which transfer function parameters 
+        # correspond to each output variable, then stacked as new trials
+        a_yhat = self.modelDict['a'](sig.xData['a'])
+        
+        predDict = dict()
+        errDict = dict()
+        self.stdDict = dict()
+        
+        print(a_yhat.covariance)
+        predDict['a'] = np.array(a_yhat.mean())[:,0]
+        errDict['a'] = np.array(2*a_yhat.stddev())[:,0]
+        self.stdDict['a'] = np.mean(errDict['a'])
+        
+        predDict['b'] = np.array(a_yhat.mean())[:,1]
+        errDict['b'] = np.array(2*a_yhat.stddev())[:,1]
+        self.stdDict['b'] = np.mean(errDict['b'])
+        
+        nameDict = dict()
+        nameDict['a'] = 'a'
+        nameDict['b'] = 'b'
+        sns.set_style("dark")
+        
+        tempdict = dict()
+        tempdict['a'] = sig.yData['a'][:,0]
+        tempdict['b'] = sig.yData['a'][:,1]
+        
+        if stepResponse and sig.inDim==1:
+            self.step_response_validation(sig,predDict,errDict)
+        else:
+            fig, axes = plt.subplots(1, 2,figsize=(12,5),dpi=400)  
+            for (idx,parameter) in enumerate(['a','b']):
+                ax = axes[idx]
+                fig.add_subplot(111, frameon=False)
+                plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
+                ax.plot(tempdict[parameter],predDict[parameter],'.k',label=nameDict[parameter])
+                r2 =("r\u00b2 = %.3f" % r2_score(tempdict[parameter],predDict[parameter]))
+                ax.errorbar(tempdict[parameter],predDict[parameter],
+                            yerr=errDict[parameter],fmt='none',ecolor='green',
+                            label=('Avg. Unc.=%.2f' %self.stdDict[parameter]))
+                ax.plot(np.linspace(0,1),np.linspace(0,1),'--r',label = r2)
+                ax.legend()
+            
+            for ax in axes.flat:
+                ax.label_outer()
+                ax.xaxis.grid()
+                ax.yaxis.grid()
+                
+            plt.ylabel("Predicted Parameter Value")
+            plt.xlabel("True Parameter Value")
+        self.results = dict()
+        self.results['a'] = predDict['a'][:len(predDict['a'])//2]
+        self.results['b'] = predDict['a'][len(predDict['a'])//2:]
+        return predDict, errDict
+    
+    def step_response_validation(self,sig,predDict,errDict):
+        """Pick random parameterizations from the gaussian 
+        distribution of each parameter and plot. Finish by 
+        plotting the mean response and labeling with SSE"""
+        sse_mean = np.zeros(sig.numTrials)
+        sse_variance = np.zeros(sig.numTrials)
+        sses = np.zeros(99)
+        for i in range(0,len(predDict['b'])):
+            if i<10:
+                plt.figure(i+100,dpi=200)
+            for j in range(0,100):
+                if j<99:
+                    gauss_b = np.random.normal(predDict['b'][i],errDict['b'][i]/2)
+                    gauss_a = np.random.normal(predDict['a'][i],errDict['a'][i]/2)
+                    gauss_k = abs(int(np.ceil(np.random.normal(predDict['k'][i],errDict['k'][i]/2))))
+                    if gauss_k==0:
+                        gauss_k=1
+                    numTemp = [gauss_b]
+                    denTemp = [1.,-gauss_a]
+                    sys = control.tf(numTemp,denTemp,1)
+                    _,resp,_ = control.forced_response(sys,U=sig.test_sequence,
+                                                       T=np.linspace(0,sig.length-1,sig.length))
+                    temp = np.zeros_like(resp)
+                    temp[gauss_k:] = resp[:-gauss_k]
+                    if i<10:
+                        plt.plot(sig.t[:200],temp[:200]/np.max(sig.ySteps[i]),'maroon',linewidth=.5)
+                    tempo = sig.ySteps[i][:]
+                    sses[j] = self.sum_error(tempo,temp)
+                    
+                else:
+                    numTemp = [predDict['b'][i]]
+                    denTemp = [1.,-predDict['a'][i]]
+                    sys = control.tf(numTemp,denTemp,1)
+                    _,resp,_ = control.forced_response(sys,U=sig.test_sequence,
+                                                       T=np.linspace(0,sig.length-1,sig.length))
+                    temp = np.zeros_like(resp)
+                    theta=abs(int(np.ceil(predDict['k'][i])))
+                    if theta==0:
+                        theta=1
+                    temp[theta:] = resp[:-theta]
+                    tempo = sig.ySteps[i][:]
+                    if i<10:
+                        plt.plot(sig.t[:200],sig.ySteps[i][:200]/np.max(sig.ySteps[i]),
+                                 'g--',label='True Response, STDEV=%.1f'%sig.STDEVS[i])
+                    sse = self.sum_error(tempo,temp)
+                    sse_mean[i] = sse
+                    sse_variance[i] = np.var(sses) 
+                    if i<10:
+                        plt.plot(sig.t[:200],temp[:200]/np.max(sig.ySteps[i]),
+                                 'r',label='Estimated Response, SSE=%.2f'%sse,linewidth=1)
+                        plt.legend()
+        
+        df = pd.DataFrame()
+        df['Gauss'] = sig.STDEVS
+        df['Mean SSE'] = sse_mean
+        df['Var SSE'] = sse_variance
+        df['order'] = np.full(len(sse_mean),sig.order)
+        df['b'] = sig.yData['b'].flatten()
+        df['a'] = sig.yData['a'].flatten()
+        df['k'] = sig.yData['k'].flatten()
+        df['b Pred'] = predDict['b']
+        df['a Pred'] = predDict['a']
+        df['k Pred'] = predDict['k']
+        df['b Std'] = errDict['b']
+        df['a Std'] = errDict['a']
+        df['k Std'] = errDict['k']
+        
+        path = '/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/Model Validation/Validation Data/'
+        file = 'step_data_1.csv'
+        i=1
+        while os.path.isfile(path+file):
+            i+=1
+            file = 'step_data_' + str(i) + '.csv'
+            
+        df.to_csv(path+file)
+        return
+        
+    def sum_error(self,a,b):
+        # Compute the sum of squared error between
+        # the real and mean predicted response
+        atemp=np.array(a[:100]).flatten()
+        btemp=np.array(b[:100]).flatten()
+        sse = ((atemp-btemp)**2).sum(axis=0)
+        return sse
 
 
-    def coeff_determination(self,y_true, y_pred):
+    def coeff_determination(y_true, y_pred):
         "Coefficient of determination for callback"
-        SS_res =  K.sum(K.square( y_true-y_pred ))
-        SS_tot = K.sum(K.square( y_true - K.mean(y_true) ) )
+        SS_res =  K.sum(K.square( y_true[:,1]-y_pred[:,1] ))
+        SS_tot = K.sum(K.square( y_true[:,1] - K.mean(y_true[:,1]) ) )
         return ( 1 - SS_res/(SS_tot + K.epsilon()) )                
     
     # Specify the surrogate posterior over `keras.layers.Dense` `kernel` and `bias`.
@@ -366,7 +586,8 @@ class Model:
       return tf.keras.Sequential([
           tfp.layers.VariableLayer(2 * n, dtype=dtype,initializer='glorot_uniform'),
           tfp.layers.DistributionLambda(lambda t: tfd.Independent(
-              tfd.Normal(loc=t[..., :n],scale=1e-5 + tf.nn.softplus(c + t[..., n:])),reinterpreted_batch_ndims=1)),])
+              tfd.Normal(loc=t[..., :n],scale=1e-5 + 
+                         tf.nn.softplus(c + t[..., n:])),reinterpreted_batch_ndims=1)),])
      
   # Specify the prior over `keras.layers.Dense` `kernel` and `bias`.
     def prior_trainable(kernel_size, bias_size=0, dtype=None):
@@ -374,20 +595,77 @@ class Model:
       return tf.keras.Sequential([
           tfp.layers.VariableLayer(n, dtype=dtype,initializer='glorot_uniform'),
           tfp.layers.DistributionLambda(lambda t: tfd.Independent(
-              tfd.Normal(loc=t, scale=1),reinterpreted_batch_ndims=1)),])
+              tfd.Normal(loc=t, scale=0.1),reinterpreted_batch_ndims=1)),])
 
-    def mutable_model(self,x_train,y_train):
+    def customloss(self,y1,y2):
+        rand = np.random.normal(-1,1)
+        t = np.linspace(0,100,100)
+        T = np.array([t,]*100)
+        #y2 = y2.prob(y1) 
+        y_true = tf.map_fn(fn = lambda x: y1[:,0] * 
+                           tf.math.exp(-x/y1[:,1]),elems=tf.constant(T,dtype=tf.float32))
+        y_pred = tf.map_fn(fn = lambda x: y2[:,0] * 
+                           tf.math.exp(-x/y2[:,1]),elems=tf.constant(T,dtype=tf.float32))
+        return K.sum(K.square( y_true-y_pred ))
+        
+    def mutable_convolutional(self):
+        "Probabilistic model for SISO data"
+        #negloglik = lambda y, rv_y: -rv_y.log_prob(y[:])
+        model = tf.keras.Sequential([
+        tf.keras.layers.LSTM(100, activation='tanh', input_shape=(None, 5)),
+        tf.keras.layers.Dense(100,activation='softplus'),
+        tf.keras.layers.Dense(2,activation='softplus')])
+        model.compile(optimizer='adam', loss=self.customloss,metrics=[Model.coeff_determination])
+        return model
+
+    def mutable_model(self):
+        "Probabilistic model for SISO data"
+        negloglik = lambda y, rv_y: -rv_y.log_prob(y[:])
+        model = tf.keras.Sequential([
+        tf.keras.layers.LSTM(100, activation='tanh', input_shape=(None, 1)),
+        tfp.layers.DenseVariational(4*1,Model.posterior_mean_field,Model.prior_trainable,activation='linear',kl_weight=1/100),
+        tfp.layers.DistributionLambda(lambda t: tfd.Normal(loc = t[..., :2],
+        scale = (1e-3 + tf.math.softplus(0.1 * t[...,2:])),)),])
+        model.compile(optimizer='adam', loss=negloglik,metrics=[Model.coeff_determination])
+        return model
+
+    def mutable_model_nomulti(self):
+        "Probabilistic model for SISO data"
+        negloglik = lambda y, rv_y: -rv_y.log_prob(y[:])
+        model = tf.keras.Sequential([
+        tf.keras.layers.LSTM(100, activation='tanh', input_shape=(None, 1)),
+        tfp.layers.DenseVariational(4*1,Model.posterior_mean_field,
+                                    Model.prior_trainable,activation='linear',kl_weight=1/100),
+        tfp.layers.DistributionLambda(lambda t: tfd.Normal(loc = t[..., :2],
+        scale = (1e-3 + tf.math.softplus(0.1 * t[...,2:])),)),])
+        model.compile(optimizer='adam', loss=negloglik,metrics=[Model.coeff_determination])
+        return model
+    
+    def mutable_model_safecopy(self):
+        "Probabilistic model for SISO data"
+        negloglik = lambda y, rv_y: -rv_y.log_prob(y[:])
+        model = tf.keras.Sequential([
+        tf.keras.layers.LSTM(100, activation='tanh', input_shape=(None, 1)),          
+        tf.keras.layers.Dense(100,activation='softplus'),
+        tfp.layers.DenseVariational(2*1,Model.posterior_mean_field,
+                                    Model.prior_trainable,activation='linear',kl_weight=1/100),
+        tfp.layers.DistributionLambda(lambda t: tfd.Normal(loc = t[..., :1],
+        scale = (1e-3 + tf.math.softplus(0.1 * t[...,1:])),)),])
+        model.compile(optimizer='adam', loss=negloglik,metrics=[Model.coeff_determination])
+        return model
+    
+    def mutable_model_noAttribute(x_train,y_train):
         length,width,height = x_train.shape
         outheight,outwidth = y_train.shape
         "Probabilistic model for SISO data"
         negloglik = lambda y, rv_y: -rv_y.log_prob(y[:])
         model = tf.keras.Sequential([
-        tf.keras.layers.LSTM(int(width/2), activation='tanh',input_shape=(width,height)),          
-        tf.keras.layers.Dense(int(self.inDim*10),activation='linear'),
-        tfp.layers.DenseVariational(2*self.inDim,Model.posterior_mean_field,Model.prior_trainable,activation='linear',kl_weight=1/x_train.shape[0]),
-        tfp.layers.DistributionLambda(lambda t: tfd.Normal(loc = t[..., :self.inDim],
-        scale = (1e-3 + tf.math.softplus(0.1 * t[...,self.inDim:])),)),])
-        model.compile(optimizer='adam', loss=negloglik,metrics=[self.coeff_determination])
+        tf.keras.layers.LSTM(100, activation='tanh',input_shape=(None,height)),          
+        tfp.layers.DenseVariational(2*1,Model.posterior_mean_field,
+                                    Model.prior_trainable,activation='linear',kl_weight=1/100),
+        tfp.layers.DistributionLambda(lambda t: tfd.Normal(loc = t[..., :1],
+        scale = (1e-3 + tf.math.softplus(0.1 * t[...,1:])),)),])
+        model.compile(optimizer='adam', loss=negloglik,metrics=[Model.coeff_determination])
         return model
     
 class Probability:
@@ -481,14 +759,14 @@ class Probability:
             # Empty arrays to put predictions in
             stdev = np.array([0])
             error=np.array([0])
-            kp_pred = np.array([0])
-            theta_pred = np.array([0])
-            tau_pred = np.array([0])
+            b_predicted = np.array([0])
+            k_predicted = np.array([0])
+            a_predicted = np.array([0])
             
             # Empty arrays to put true parameters in
-            kp_true = np.array([0])
-            theta_true = np.array([0])
-            tau_true = np.array([0])
+            b_true_value = np.array([0])
+            k_true_value = np.array([0])
+            a_true_value = np.array([0])
             
             # Produce simulation for each standard deviation below
             # the max standard deviation to add to the gaussian
@@ -499,7 +777,7 @@ class Probability:
                 
                 # then simulates using the initialized model
                 sig = Signal(numTrials,nstep,timelength,trainFrac,stdev=deviation)
-                sig.SISO_simulation(KpRange=[1,10],tauRange=[1,10],thetaRange=[1,10])
+                sig.SISO_simulation(b_possible_values=[1,10],a_possible_values=[1,10],k_possible_values=[1,10])
                 
                 # In this case, since we are only loading the model, not trying to train it,
                 # we can use function simulate and preprocess
@@ -510,26 +788,26 @@ class Probability:
                 
                 # Add predicted values to end of arrays
                 error = np.concatenate((predictor.errors,error))
-                kp_pred = np.concatenate((predictor.kpPredictions[:,0],kp_pred))
-                theta_pred = np.concatenate((predictor.thetaPredictions[:,0],theta_pred))
-                tau_pred = np.concatenate((predictor.tauPredictions[:,0],tau_pred))
+                b_predicted = np.concatenate((predictor.b_model_predictionictions[:,0],b_predicted))
+                k_predicted = np.concatenate((predictor.k_model_predictionictions[:,0],k_predicted))
+                a_predicted = np.concatenate((predictor.a_model_predictionictions[:,0],a_predicted))
                 
                 # Add true values to the end of arrays
-                kp_true = np.concatenate((sig.kps,kp_true))
-                theta_true = np.concatenate((sig.thetas,theta_true))
-                tau_true = np.concatenate((sig.taus,tau_true))
+                b_true_value = np.concatenate((sig.aVals,b_true_value))
+                k_true_value = np.concatenate((sig.kVals,k_true_value))
+                a_true_value = np.concatenate((sig.aVals,a_true_value))
                 stdev = np.concatenate((np.full_like(predictor.errors,deviation),stdev))
             
             # Transfer to Pandas before saving to CSV 
             sd = pd.DataFrame()
             sd['stdev'] = stdev
             sd['mse'] = error
-            sd['kpPred'] = kp_pred
-            sd['tauPred'] = tau_pred
-            sd['thetaPred'] = theta_pred
-            sd['kpTrue'] = kp_true
-            sd['tauTrue'] = tau_true
-            sd['thetaTrue'] = theta_true
+            sd['b_model_prediction'] = b_predicted
+            sd['a_model_prediction'] = a_predicted
+            sd['k_model_prediction'] = k_predicted
+            sd['b_true_value'] = b_true_value
+            sd['a_true_value'] = a_true_value
+            sd['k_true_value'] = k_true_value
             
             sd.to_csv(self.errorCSV, index=False)
         
@@ -547,7 +825,7 @@ class Probability:
         # as well as the prediction/true parameters
         self.errorDict = {}  
         pathPrefix = self.prefix+"SISO/Plots/"
-        prefixes = ['kp','tau','theta']
+        prefixes = ['b','a','k']
         for (i,prefix) in enumerate(prefixes):
             sd[prefix+'Error'] = (sd[prefix+'Pred']-sd[prefix+'True'])
             h = np.std(sd[prefix+'Error'])
@@ -563,9 +841,12 @@ class Probability:
                 plt.savefig(savePath)
                 
                 plt.figure(dpi=200)
-                plt.plot(sd[prefix+'True'],sd[prefix+'Pred'],'.',label='Max Error = %i%%' % self.maxError)
-                plt.plot(np.linspace(1,10),np.linspace(1,10),'r--',label="r\u00b2 = %.3f" % r2_score(sd[prefix+'True'],sd[prefix+'Pred']))
-                plt.plot(np.linspace(1,10),np.linspace(1,10)+h,'g--',label="Stdev = %.3f" % h)
+                plt.plot(sd[prefix+'True'],sd[prefix+'Pred'],'.',
+                         label='Max Error = %i%%' % self.maxError)
+                plt.plot(np.linspace(1,10),np.linspace(1,10),'r--',
+                         label="r\u00b2 = %.3f" % r2_score(sd[prefix+'True'],sd[prefix+'Pred']))
+                plt.plot(np.linspace(1,10),np.linspace(1,10)+h,'g--',
+                         label="Stdev = %.3f" % h)
                 plt.plot(np.linspace(1,10),np.linspace(1,10)-h,'g--')
                 plt.ylabel("Predicted Value of "+prefix)
                 plt.xlabel("True Value of "+prefix)
@@ -589,11 +870,11 @@ class Probability:
             
             stdev = np.array([0])
             error=np.array([0])
-            kp_pred = np.array([0])
-            tau_pred = np.array([0])
+            b_predicted = np.array([0])
+            a_predicted = np.array([0])
             
-            kp_true = np.array([0])
-            tau_true = np.array([0])
+            b_true_value = np.array([0])
+            a_true_value = np.array([0])
             
             for deviation in deviations:
                 numTrials = self.numTrials; nstep = self.nstep
@@ -601,7 +882,7 @@ class Probability:
                 
                 # then simulates using the initialized model
                 sig = Signal(numTrials,nstep,timelength,trainFrac,stdev=deviation)
-                sig.MIMO_simulation(KpRange=[1,10],tauRange=[1,10])
+                sig.MIMO_simulation(b_possible_values=[1,10],a_possible_values=[1,10])
                 
                 # In this case, since we are only loading the model, not trying to train it,
                 # we can use function simulate and preprocess
@@ -611,19 +892,19 @@ class Probability:
                 predictor.predict_MIMO(sig,savePredict=False,plotPredict=False,probabilityCall=True)
                 
                 error = np.concatenate((predictor.errors,error))
-                kp_pred = np.concatenate((predictor.kpPredictions.ravel(),kp_pred))
-                tau_pred = np.concatenate((predictor.tauPredictions.ravel(),tau_pred))
+                b_predicted = np.concatenate((predictor.b_model_predictionictions.ravel(),b_predicted))
+                a_predicted = np.concatenate((predictor.a_model_predictionictions.ravel(),a_predicted))
                 
-                kp_true = np.concatenate((sig.kps.ravel(),kp_true))
-                tau_true = np.concatenate((sig.taus.ravel(),tau_true))
+                b_true_value = np.concatenate((sig.aVals.ravel(),b_true_value))
+                a_true_value = np.concatenate((sig.aVals.ravel(),a_true_value))
                 stdev = np.concatenate((np.full_like(predictor.errors,deviation),stdev))
             
             # Transfer to pandas to save to CSV
             sd = pd.DataFrame()
-            sd['kpPred'] = kp_pred
-            sd['tauPred'] = tau_pred
-            sd['kpTrue'] = kp_true
-            sd['tauTrue'] = tau_true
+            sd['b_model_prediction'] = b_predicted
+            sd['a_model_prediction'] = a_predicted
+            sd['b_true_value'] = b_true_value
+            sd['a_true_value'] = a_true_value
             
             sd.to_csv(self.errorCSV, index=False)
           
@@ -642,7 +923,7 @@ class Probability:
         # Plot histogram and predicted/true parameters
         self.errorDict = {}  
         pathPrefix = self.prefix+"MIMO/Plots/"
-        prefixes = ['kp','tau']
+        prefixes = ['b','a']
         for (i,prefix) in enumerate(prefixes):
             sd[prefix+'Error'] = (sd[prefix+'Pred']-sd[prefix+'True'])
             h = np.std(sd[prefix+'Error'])
@@ -658,8 +939,10 @@ class Probability:
                 plt.savefig(savePath)
                 
                 plt.figure(dpi=200)
-                plt.plot(sd[prefix+'True'],sd[prefix+'Pred'],'.',label='Max Error = %i%%' % self.maxError)
-                plt.plot(np.linspace(1,10),np.linspace(1,10),'r--',label="r\u00b2 = %.3f" % r2_score(sd[prefix+'True'],sd[prefix+'Pred']))
+                plt.plot(sd[prefix+'True'],sd[prefix+'Pred'],'.',
+                         label='Max Error = %i%%' % self.maxError)
+                plt.plot(np.linspace(1,10),np.linspace(1,10),'r--',
+                         label="r\u00b2 = %.3f" % r2_score(sd[prefix+'True'],sd[prefix+'Pred']))
                 plt.plot(np.linspace(1,10),np.linspace(1,10)+h,'g--',label="Stdev = %.3f" % h)
                 plt.plot(np.linspace(1,10),np.linspace(1,10)-h,'g--')
                 plt.ylabel("Predicted Value of "+prefix)

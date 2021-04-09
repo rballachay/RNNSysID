@@ -15,29 +15,25 @@ import time
 # These constants are also defined in the Signal module 
 # Don't change here unless you also change them there
 numTrials = 1000
-batchSize = 64
-plots = 0
+plots = 10
 
-inDims = range(1,6)
-outDims = range(1,6)
+inDims = range(1,2)
+outDims = range(1,2)
 
 for (inDimension,outDimension) in zip(inDims,outDims):   
     start_time = time.time()
     
-    sig = Signal(inDimension,outDimension,numTrials,numPlots=plots)
+    sig = Signal(inDimension,outDimension,numTrials,numPlots=plots,stdev=5)
     
-    uArray,yArray,tauArray,KpArray,thetaArray,train,test = sig.sys_simulation()
+    uArray,yArray,tauArray,KpArray,thetaArray,train,test = sig.sys_simulation(b_possible_values=[.01,.99],a_possible_values=[.01,.99],
+                                        k_possible_values=[0,1],order=False,disturbance=False)
     
     uArray = uArray[:,:,0]
     yArray = yArray[:,:,0]
     
-    if inDimension==1:
-        np.savetxt('/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/MATLAB code/u_1x1.csv',uArray, delimiter=',')
-        np.savetxt('/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/MATLAB code/y_1x1.csv',yArray, delimiter=',')
-        np.savetxt('/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/MATLAB code/tau_1x1.csv',tauArray, delimiter=',')
-        np.savetxt('/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/MATLAB code/kp_1x1.csv',KpArray, delimiter=',')
-        np.savetxt('/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/MATLAB code/theta_1x1.csv',thetaArray, delimiter=',')
-        
-    elif inDimension==2:
-        np.savetxt('/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/MATLAB code/u_2x2.csv',uArray)
-        np.savetxt('/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/MATLAB code/y_2x2.csv',yArray)
+
+    np.savetxt('/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/MATLAB code/u_1x1.csv',uArray)
+    np.savetxt('/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/MATLAB code/y_1x1.csv',yArray)
+    np.savetxt('/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/MATLAB code/taus_1x1.csv',tauArray)
+    np.savetxt('/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/MATLAB code/Kps_1x1.csv',KpArray)
+    np.savetxt('/Users/RileyBallachay/Documents/Fifth Year/RNNSystemIdentification/MATLAB code/thetas_1x1.csv',thetaArray)
